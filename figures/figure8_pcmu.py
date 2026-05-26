@@ -1,7 +1,7 @@
 """
 figures/figure8_pcmu.py — Figure 8 (PCMU)
 
-PCMU composite score dot plot (Cleveland plot) for the unified Paper 1 + 2 results.
+PCMU composite score dot plot (Cleveland plot).
 One row per configuration, PCMU on x-axis, ±1 std CI bars.
 Configurations grouped by research question with a visual separator.
 

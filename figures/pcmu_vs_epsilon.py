@@ -1,5 +1,5 @@
 """
-figures/pcmu_vs_epsilon.py — PCMU vs. privacy budget (ε) for Paper 2.
+figures/pcmu_vs_epsilon.py — PCMU vs. privacy budget (ε).
 
 Single-panel line plot:
   x-axis: ε ∈ {0.5, 1, 2, 5, 10, ∞} (evenly spaced, log-like positions, ∞ at right)

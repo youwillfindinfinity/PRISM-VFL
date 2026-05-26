@@ -239,9 +239,9 @@ All results reported in the paper use seeds 42, 123, and 7.
 ## Reproducing Experiments
 
 Run each experiment script from the repository root (`PRISM-VFL/`) after completing data
-setup. All results reported in the papers use seeds 42, 123, and 7.
+setup. All results reported in the paper use seeds 42, 123, and 7.
 
-### Paper 1 — VFL-MTL
+### VFL-MTL experiments
 
 ```bash
 # Baselines (run first — centralized.csv used by figure4)
@@ -275,7 +275,7 @@ python experiments/evaluate_exp3.py --splits_dir data/vertical_splits
 python experiments/evaluate_ablations.py --splits_dir data/vertical_splits
 ```
 
-### Paper 2 — Differential Privacy
+### Differential privacy experiments
 
 ```bash
 # Epsilon sweep (one call per level; results appended to combined CSV)
