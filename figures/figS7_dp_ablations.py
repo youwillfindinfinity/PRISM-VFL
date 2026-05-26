@@ -1,20 +1,20 @@
 """
-figures/figS8_dp_ablations.py — S8 Fig: DP ablation figures.
+figures/figS7_dp_ablations.py — S7 Fig: DP ablation figures.
 
 Reads results/dp_ablations.csv and generates one figure per ablation:
 
-  Abl 1 (S8A) - dumbbell chart: uniform vs. stratified sigma at epsilon=5
-  Abl 2 (S8B) - dumbbell chart: gradient coupling rho and IHM inference AUC
+  Abl 1 (S7A) - dumbbell chart: uniform vs. stratified sigma at epsilon=5
+  Abl 2 (S7B) - dumbbell chart: gradient coupling rho and IHM inference AUC
                 for related (IHM+Decomp) vs. unrelated (IHM+Pheno) task pairs
-  Abl 3 (S8C) - line plot: per-task AUC vs. epsilon for embed_dim in {32, 64, 128}
+  Abl 3 (S7C) - line plot: per-task AUC vs. epsilon for embed_dim in {32, 64, 128}
 
 Usage
 -----
-  python figures/figS8_dp_ablations.py                          # unified figure → plots/S8A_DP_ABL1.png (via --abl 1 etc.)
-  python figures/figS8_dp_ablations.py --abl 1                  # → plots/S8A_DP_ABL1.png
-  python figures/figS8_dp_ablations.py --abl 2                  # → plots/S8B_DP_ABL2.png
-  python figures/figS8_dp_ablations.py --abl 3                  # → plots/S8C_DP_ABL3.png
-  python figures/figS8_dp_ablations.py --input results/dp_ablations.csv
+  python figures/figS7_dp_ablations.py                          # unified figure → plots/S7A_DP_ABL1.png (via --abl 1 etc.)
+  python figures/figS7_dp_ablations.py --abl 1                  # → plots/S7A_DP_ABL1.png
+  python figures/figS7_dp_ablations.py --abl 2                  # → plots/S7B_DP_ABL2.png
+  python figures/figS7_dp_ablations.py --abl 3                  # → plots/S7C_DP_ABL3.png
+  python figures/figS7_dp_ablations.py --input results/dp_ablations.csv
 """
 
 import argparse
@@ -385,11 +385,11 @@ def main() -> None:
     out = Path(args.outdir)
 
     if args.abl is None:
-        plot_unified(df, df3, out / "S8A_DP_ABL1.png")
+        plot_unified(df, df3, out / "S7A_DP_ABL1.png")
     else:
-        if args.abl == 1: plot_abl1(df, out / "S8A_DP_ABL1.png")
-        if args.abl == 2: plot_abl2(df, out / "S8B_DP_ABL2.png")
-        if args.abl == 3: plot_abl3(df3, out / "S8C_DP_ABL3.png")
+        if args.abl == 1: plot_abl1(df, out / "S7A_DP_ABL1.png")
+        if args.abl == 2: plot_abl2(df, out / "S7B_DP_ABL2.png")
+        if args.abl == 3: plot_abl3(df3, out / "S7C_DP_ABL3.png")
 
 
 if __name__ == "__main__":

@@ -64,9 +64,9 @@ PRISM-VFL/
 │   ├── figure6_resilience_variance.py # Fig 6: std(AUC) vs. epsilon (SRQ1)
 │   ├── figure7_privacy_utility.py     # Fig 7: AUC vs. epsilon per task (SRQ2)
 │   ├── figure8_pcmu.py          # Fig 8: PCMU Cleveland dot plot
-│   ├── figS6_label_inference.py # Supp S6: label inference accuracy
-│   ├── figS7_ablations.py       # Supp S7: architecture ablations
-│   ├── figS8_dp_ablations.py    # Supp S8: DP ablations
+│   ├── figS5_label_inference.py # Supp S5: label inference accuracy
+│   ├── figS6_ablations.py       # Supp S6: architecture ablations
+│   ├── figS7_dp_ablations.py    # Supp S7: DP ablations
 │   └── pcmu_vs_epsilon.py       # PCMU vs. epsilon line plot
 ├── plots/                       # Generated figures (PNG output)
 ├── results/                     # Experiment result CSVs
@@ -357,9 +357,9 @@ python figures/figure7_privacy_utility.py
 python figures/figure8_pcmu.py
 
 # Supplementary figures
-python figures/figS6_label_inference.py
-python figures/figS7_ablations.py
-python figures/figS8_dp_ablations.py
+python figures/figS5_label_inference.py
+python figures/figS6_ablations.py
+python figures/figS7_dp_ablations.py
 python figures/pcmu_vs_epsilon.py
 ```
 
@@ -371,9 +371,9 @@ python figures/pcmu_vs_epsilon.py
 | `figure6_resilience_variance.py` | std(AUC) vs. ε (SRQ1) | `results/privacy_utility_combined.csv` |
 | `figure7_privacy_utility.py` | AUC vs. ε per task (SRQ2) | `results/privacy_utility_combined.csv` |
 | `figure8_pcmu.py` | PCMU Cleveland dot plot | `results/pcmu_paper_results.csv` |
-| `figS6_label_inference.py` | Label inference accuracy | `results/label_inference.csv` |
-| `figS7_ablations.py` | Architecture ablations | `results/ablations.csv`, `results/test_ablations.csv` |
-| `figS8_dp_ablations.py` | DP ablations | `results/dp_ablations.csv`, `results/test_ablations_dp.csv` |
+| `figS5_label_inference.py` | Label inference accuracy | `results/label_inference.csv` |
+| `figS6_ablations.py` | Architecture ablations | `results/ablations.csv`, `results/test_ablations.csv` |
+| `figS7_dp_ablations.py` | DP ablations | `results/dp_ablations.csv`, `results/test_ablations_dp.csv` |
 
 ---
 

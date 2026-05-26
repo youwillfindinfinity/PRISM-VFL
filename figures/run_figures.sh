@@ -9,18 +9,18 @@
 # Figure → RQ mapping
 # ─────────────────────────────────────────────────────────────────────────────
 # Fig 4  (Figure4_RQ.png)              SRQ1 — Multi-task vs. single-task baselines
-# S4     (S4_LearningCurves.png)       SRQ1 — Validation learning curves
+# S3     (S3_LearningCurves.png)       SRQ1 — Validation learning curves
 # Fig 5a (Figure5a_TaskRelatedness.png) SRQ1 — Task relatedness / negative transfer
 # Fig 5b (Figure5b_Scalability.png)    Exp3 — 2-site vs. 3-site scalability
 # Fig 6  (Figure6_SQR2.png)            SRQ2 — DP stochasticity variance
 # Fig 7  (Figure7_SRQ3.png)            SRQ3 — Privacy-utility curves
 # Fig 8  (Figure8_PCMU.png)            PCMU — Unified composite ranking
-# S6     (S6_LabelInference.png)       SRQ3 — Theoretical bound vs. empirical attacks
-# S7     (S7_Ablations.png)            SRQ1 — Architectural ablations
-# S8A    (S8A_DP_ABL1.png)             SRQ2/3 — DP ablation 1 (uniform vs. stratified)
-# S8B    (S8B_DP_ABL2.png)             SRQ2/3 — DP ablation 2 (task coupling)
-# S8C    (S8C_DP_ABL3.png)             SRQ2/3 — DP ablation 3 (embed_dim × ε)
-# S9     (S9_PCMUSensitivity.png)      PCMU — Weight sensitivity surface
+# S5     (S5_LabelInference.png)       SRQ3 — Theoretical bound vs. empirical attacks
+# S6     (S6_Ablations.png)            SRQ1 — Architectural ablations
+# S7A    (S7A_DP_ABL1.png)             SRQ2/3 — DP ablation 1 (uniform vs. stratified)
+# S7B    (S7B_DP_ABL2.png)             SRQ2/3 — DP ablation 2 (task coupling)
+# S7C    (S7C_DP_ABL3.png)             SRQ2/3 — DP ablation 3 (embed_dim × ε)
+# S8     (S8_PCMUSensitivity.png)      PCMU — Weight sensitivity surface
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -28,7 +28,7 @@ cd "$(dirname "$0")/.."   # ensure we are in PRISM-VFL/
 
 mkdir -p Manuscript/figures
 
-echo "=== Fig 4 + S4: Baselines and learning curves (SRQ1) ==="
+echo "=== Fig 4 + S3: Baselines and learning curves (SRQ1) ==="
 python3 figures/figure4_baselines.py
 
 echo ""
@@ -52,21 +52,21 @@ echo "=== Fig 8: PCMU composite ranking ==="
 python3 figures/figure8_pcmu.py
 
 echo ""
-echo "=== S6: Label inference bound validation (SRQ3) ==="
-python3 figures/figS6_label_inference.py
+echo "=== S5: Label inference bound validation (SRQ3) ==="
+python3 figures/figS5_label_inference.py
 
 echo ""
-echo "=== S7: Architectural ablations (SRQ1) ==="
-python3 figures/figS7_ablations.py
+echo "=== S6: Architectural ablations (SRQ1) ==="
+python3 figures/figS6_ablations.py
 
 echo ""
-echo "=== S8: DP ablations 1, 2, 3 (SRQ2/3) ==="
-python3 figures/figS8_dp_ablations.py --abl 1
-python3 figures/figS8_dp_ablations.py --abl 2
-python3 figures/figS8_dp_ablations.py --abl 3
+echo "=== S7: DP ablations 1, 2, 3 (SRQ2/3) ==="
+python3 figures/figS7_dp_ablations.py --abl 1
+python3 figures/figS7_dp_ablations.py --abl 2
+python3 figures/figS7_dp_ablations.py --abl 3
 
 echo ""
-echo "=== S9: PCMU weight sensitivity surface ==="
+echo "=== S8: PCMU weight sensitivity surface ==="
 python3 experiments/evaluate_phase4.py
 
 echo ""

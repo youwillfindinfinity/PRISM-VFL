@@ -14,7 +14,7 @@ at fixed task_config=all_tasks. Weight variation applied analytically on the z-s
 
 Outputs:
   results/pcmu_phase4_sensitivity.csv   — Morris μ*, σ and Sobol S1, ST per input
-  plots/S9_PCMUSensitivity.png          — 3-panel: heatmap + two contour plots (S9 Fig)
+  plots/S8_PCMUSensitivity.png          — 3-panel: heatmap + two contour plots (S8 Fig)
 """
 
 from __future__ import annotations
@@ -453,7 +453,7 @@ def main() -> None:
 
     # Figures
     import os; os.makedirs("Manuscript/figures", exist_ok=True)
-    plot_sensitivity(morris_df, sobol_df, pcmu_fn, "Manuscript/figures/S9_PCMUSensitivity.png")
+    plot_sensitivity(morris_df, sobol_df, pcmu_fn, "Manuscript/figures/S8_PCMUSensitivity.png")
 
     # Weight sensitivity table (standalone — uses pcmu_paper_results.csv directly)
     compute_weight_sensitivity_table()

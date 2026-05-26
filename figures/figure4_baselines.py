@@ -9,7 +9,7 @@ Reads (gracefully skips if missing):
   results/exp1.csv   (VFL-MTL rows only)
 
 Produces:
-  plots/S4_LearningCurves.png  — val AUC per epoch/round, mean ± std (S4 Fig)
+  plots/S3_LearningCurves.png  — val AUC per epoch/round, mean ± std (S3 Fig)
   plots/Figure4_RQ.png         — final-epoch bar chart per task (Figure 4)
 """
 
@@ -154,8 +154,8 @@ for i, (ax, local_df, loc_metric, cen_metric, vfl_metric, st_df, st_key, title) 
         ax.legend(fontsize=9)
 
 plt.tight_layout()
-fig.savefig(OUT / "S4_LearningCurves.png", dpi=800, bbox_inches="tight")
-print(f"Saved: {OUT}/S4_LearningCurves.png")
+fig.savefig(OUT / "S3_LearningCurves.png", dpi=800, bbox_inches="tight")
+print(f"Saved: {OUT}/S3_LearningCurves.png")
 plt.close()
 
 

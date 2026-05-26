@@ -1,5 +1,5 @@
 """
-figures/figS7_ablations.py — S7 Fig: Architectural ablation study.
+figures/figS6_ablations.py — S6 Fig: Architectural ablation study.
 
 Ablation study figure for the base PRISM architecture.
 Horizontal lollipop chart: final-round validation metrics, mean +/- std across 3 seeds.
@@ -9,11 +9,11 @@ Layout: 1 row x 3 columns -- IHM AUROC | Decomp AUROC | Pheno Macro-AUC
 
 Usage:
     # validation (default)
-    python figures/figS7_ablations.py \
-        --input results/ablations.csv --output plots/S7_Ablations.png
+    python figures/figS6_ablations.py \
+        --input results/ablations.csv --output plots/S6_Ablations.png
 
     # test set
-    python figures/figS7_ablations.py --source test \
+    python figures/figS6_ablations.py --source test \
         --input results/test_ablations.csv --output plots/ablations_test.png
 """
 
@@ -177,7 +177,7 @@ def main():
     if args.input is None:
         args.input  = "results/test_ablations.csv" if is_test else "results/ablations.csv"
     if args.output is None:
-        args.output = "Manuscript/figures/ablations_test.png" if is_test else "Manuscript/figures/S7_Ablations.png"
+        args.output = "Manuscript/figures/ablations_test.png" if is_test else "Manuscript/figures/S6_Ablations.png"
 
     df = pd.read_csv(args.input)
     if not is_test:

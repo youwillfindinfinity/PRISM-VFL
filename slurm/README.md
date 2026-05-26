@@ -66,8 +66,8 @@ python figures/figure5a_negative_transfer.py
 python figures/figure5b_scalability.py
 python figures/figure7_privacy_utility.py
 python figures/figure6_resilience_variance.py
-python figures/figS6_label_inference.py
-python figures/figS7_ablations.py
-python figures/figS8_dp_ablations.py
+python figures/figS5_label_inference.py
+python figures/figS6_ablations.py
+python figures/figS7_dp_ablations.py
 python figures/figure8_pcmu.py
 ```

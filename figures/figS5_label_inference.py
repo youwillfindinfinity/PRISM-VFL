@@ -1,5 +1,5 @@
 """
-figures/figS6_label_inference.py — S6 Fig: Theoretical Bound vs. Empirical Inference AUC.
+figures/figS5_label_inference.py — S5 Fig: Theoretical Bound vs. Empirical Inference AUC.
 
 Shows that the multi-task label inference bound g(σ, ρ) = Φ(C·√(1+ρ)/σ) holds:
 theoretical bound lines ≥ empirical accuracy points at each ε level.
@@ -11,9 +11,9 @@ Single panel:
   Scatter points: empirical IHM inference AUC (uniform mode, mean across seeds)
 
 Usage:
-    python figures/figS6_label_inference.py \
+    python figures/figS5_label_inference.py \
         --input results/bound_validation.csv \
-        --output plots/S6_LabelInference.png
+        --output plots/S5_LabelInference.png
 """
 
 import argparse
@@ -58,7 +58,7 @@ def _eps_to_x(eps_str: str) -> int:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input",  default="results/bound_validation.csv")
-    parser.add_argument("--output", default="Manuscript/figures/S6_LabelInference.png")
+    parser.add_argument("--output", default="Manuscript/figures/S5_LabelInference.png")
     args = parser.parse_args()
 
     df = pd.read_csv(args.input)
