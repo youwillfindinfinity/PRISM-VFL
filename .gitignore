@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Generated outputs (reproducible from experiment scripts)
+plots/*.png
+
+# Model checkpoints (large binaries)
+checkpoints/*.pt
+checkpoints/*.pth
+
+# SLURM logs
+logs/*.out
+logs/*.err
+
+# Data (not redistributable — see data/DATA_SETUP.md)
+data/mimic-raw/
+data/mimic3-benchmarks/
+data/vertical_splits/
+
+# Manuscript (LaTeX source and figures — not part of the code release)
+Manuscript/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

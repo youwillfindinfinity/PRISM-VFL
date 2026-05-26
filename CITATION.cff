@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "PRISM-VFL: A Differentially Private Vertical Federated Framework for Heterogeneous Multi-Task Clinical Prediction"
+authors:
+  - given-names: "Roland V."
+    family-names: Bumbuc
+    affiliation: "Amsterdam UMC / University of Amsterdam"
+  - given-names: "Amelia A."
+    family-names: Soare
+    affiliation: "University of Amsterdam"
+  - given-names: "H. Ibrahim"
+    family-names: Korkmaz
+    affiliation: "Amsterdam UMC / Red Cross Hospital, Beverwijk"
+  - given-names: "Vivek M."
+    family-names: Sheraton
+    affiliation: "University of Amsterdam"
+license: CC-BY-4.0
+doi: "10.xxxx/tbd"
+date-released: "2026-05-26"
+preferred-citation:
+  type: article
+  title: "PRISM-VFL: A Differentially Private Vertical Federated Framework for Heterogeneous Multi-Task Clinical Prediction"
+  authors:
+    - given-names: "Roland V."
+      family-names: Bumbuc
+    - given-names: "Amelia A."
+      family-names: Soare
+    - given-names: "H. Ibrahim"
+      family-names: Korkmaz
+    - given-names: "Vivek M."
+      family-names: Sheraton
+  year: 2026
+  doi: "10.xxxx/tbd"
+  notes: "R.V.B. and A.A.S. contributed equally. H.I.K. and V.M.S. share last authorship."

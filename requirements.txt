@@ -1,0 +1,18 @@
+# VFL-MTL core dependencies
+torch>=2.2.0
+opacus>=1.4.0
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
+scipy>=1.12
+matplotlib>=3.8
+seaborn>=0.13
+
+# Multi-label stratified splitting (iterative stratification for phenotyping labels)
+scikit-multilearn>=0.2.0
+
+# Sensitivity analysis (PCMU Phase 4: Morris screening + Sobol indices)
+SALib>=1.4
+
+# Testing
+pytest>=8.0

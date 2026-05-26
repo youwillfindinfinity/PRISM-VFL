@@ -1,0 +1,21 @@
+name: prism-vfl
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - torch>=2.2.0
+    - opacus>=1.4.0
+    - numpy>=1.26
+    - pandas>=2.2
+    - scikit-learn>=1.4
+    - scikit-multilearn>=0.2.0
+    - scipy>=1.12
+    - matplotlib>=3.8
+    - seaborn>=0.13
+    - SALib>=1.4
+    - pytest>=8.0
