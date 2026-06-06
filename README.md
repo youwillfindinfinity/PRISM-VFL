@@ -440,7 +440,7 @@ The PCMU (Privacy-Communication-adjusted Multi-task Utility) metric provides a s
 
 If you use this codebase, please cite:
 
-> Bumbuc, R. V., Soare, A. A., Korkmaz, H. I., & Sheraton, V. M. (2026). PRISM-VFL: A Differentially Private Vertical Federated Framework for Heterogeneous Multi-Task Clinical Prediction. *DOI: to be updated on publication.*
+> Soare, A. A., Bumbuc, R. V.,  Korkmaz, H. I., & Sheraton, V. M. (2026). PRISM-VFL: A Differentially Private Vertical Federated Framework for Heterogeneous Multi-Task Clinical Prediction. *DOI: to be updated on publication.*
 
 Machine-readable citation metadata is in [CITATION.cff](CITATION.cff).
 
