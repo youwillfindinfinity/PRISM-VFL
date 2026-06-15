@@ -2,6 +2,13 @@
 
 **Privacy-Resilient Integrated System for Multi-task Vertical Federated Learning**
 
+[![DOI](https://zenodo.org/badge/1250180243.svg)](https://doi.org/10.5281/zenodo.20708652)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![Opacus](https://img.shields.io/badge/Differential%20Privacy-Opacus%201.4%2B-5C4B8A.svg)](https://opacus.ai/)
+[![Data: MIMIC-III](https://img.shields.io/badge/Data-MIMIC--III-008080.svg)](https://physionet.org/content/mimiciii/1.4/)
+
 A framework for vertical federated multi-task learning (VFL-MTL) on clinical time-series data, with differential privacy and embedding-space privacy attack evaluation. Experiments use the MIMIC-III benchmark with a three-site vertical feature partition.
 
 ---
