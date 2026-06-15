@@ -6,7 +6,7 @@ authors:
   - given-names: "Amelia A."
     family-names: Soare
     affiliation: "University of Amsterdam"
- - given-names: "Roland V."
+  - given-names: "Roland V."
     family-names: Bumbuc
     affiliation: "Amsterdam UMC / University of Amsterdam"
   - given-names: "H. Ibrahim"
@@ -16,8 +16,7 @@ authors:
     family-names: Sheraton
     affiliation: "University of Amsterdam"
 license: CC-BY-4.0
-doi: "10.xxxx/tbd"
-date-released: "2026-05-26"
+date-released: "2026-06-15"
 preferred-citation:
   type: article
   title: "PRISM-VFL: A Differentially Private Vertical Federated Framework for Heterogeneous Multi-Task Clinical Prediction"
@@ -31,5 +30,3 @@ preferred-citation:
     - given-names: "Vivek M."
       family-names: Sheraton
   year: 2026
-  doi: "10.xxxx/tbd"
-  

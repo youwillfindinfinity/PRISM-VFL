@@ -1,0 +1,24 @@
+component,term,eta_sq,p,gate,partial_r
+eta_priv,C(embed_dim_cat):C(eps_cat),0.0167,0.0529,documented-finding,
+eta_priv,C(embed_dim_cat):C(task_count),0.0043,0.6331,documented-finding,
+eta_priv,C(eps_cat):C(task_count),0.0195,0.0294,documented-finding,
+eta_priv,C(embed_dim_cat):C(eps_cat):C(task_count),0.0095,0.6823,documented-finding,
+eta_comm,C(embed_dim_cat):C(eps_cat),0.1965,0.0,documented-finding,
+eta_comm,C(embed_dim_cat):C(task_count),0.0019,0.9761,documented-finding,
+eta_comm,C(eps_cat):C(task_count),0.0188,0.5862,documented-finding,
+eta_comm,C(embed_dim_cat):C(eps_cat):C(task_count),0.0227,0.9246,documented-finding,
+delta_m,C(embed_dim_cat):C(eps_cat),0.0308,0.0,documented-finding,
+delta_m,C(embed_dim_cat):C(task_count),0.0127,0.0035,documented-finding,
+delta_m,C(eps_cat):C(task_count),0.2459,0.0,documented-finding,
+delta_m,C(embed_dim_cat):C(eps_cat):C(task_count),0.0193,0.0213,documented-finding,
+pcmu_additive,C(embed_dim_cat):C(eps_cat),0.0145,0.0104,ok,
+pcmu_additive,C(embed_dim_cat):C(task_count),0.0111,0.0344,ok,
+pcmu_additive,C(embed_dim_cat):C(eps_cat):C(task_count),0.0113,0.2099,ok,
+pcmu_additive,C(eps_cat):C(task_count),0.1478,0.0,documented-finding,
+delta_m,variance_contribution_pct,0.8074,,info,
+eta_priv,variance_contribution_pct,0.0501,,info,
+eta_comm,variance_contribution_pct,0.0164,,info,
+variance_order,delta_m > eta_comm,,,ok,
+eta_priv_eta_comm,partial_r|task_count,,0.0,documented-finding,-0.6395
+delta_m_eta_priv,partial_r|task_count,,0.0,documented-finding,0.6645
+delta_m_eta_comm,partial_r|task_count,,0.0,documented-finding,-0.5039

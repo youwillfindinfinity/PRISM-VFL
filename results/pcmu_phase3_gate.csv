@@ -1,0 +1,5 @@
+test,metric,spearman_rho,p,threshold,nan_frac,gate,n_pairs,n_violations,violation_frac,median_std_nodp,median_std_all
+3a_convergence_locked,R_ordering (Spearman ρ: R_locked vs R_factorial),1.0,0.0,0.9,0.0,ok,,,,,
+3a_convergence_locked,eta_comm_ordering (Spearman ρ: locked vs factorial),1.0,0.0,0.95,,ok,,,,,
+3b_pareto_monotonicity,,,,,,ok,2492.0,0.0,0.0,,
+3c_per_site_stability,,,,0.15,,ok,,,,0.0743,0.1336

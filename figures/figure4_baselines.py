@@ -193,8 +193,7 @@ if bar_rows:
     x       = np.arange(n_tasks)
     width   = 0.8 / n_models
 
-    # Only annotate PRISM and single-task baselines (skip local/centralized to avoid crowding)
-    _annotate = {"PRISM", "ST-IHM", "ST-Decomp", "ST-Pheno"}
+    _annotate = set(models)  # annotate all bars
 
     fig, ax = plt.subplots(figsize=(11, 5.5))
     for j, model in enumerate(models):
@@ -216,7 +215,7 @@ if bar_rows:
     ax.set_xticks(x)
     ax.set_xticklabels(tasks)
     ax.set_ylim(0.4, 1.10)
-    ax.set_ylabel("Val AUC (mean ± std, 6 seeds)")
+    ax.set_ylabel("Val AUC (mean ± std)")
     ax.set_title("Final epoch performance per task across model configurations", fontweight="normal")
     ax.legend(fontsize=9, loc="upper center", bbox_to_anchor=(0.5, -0.10),
               ncol=5, frameon=False)

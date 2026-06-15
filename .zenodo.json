@@ -1,0 +1,39 @@
+{
+  "title": "PRISM-VFL: A Differentially Private Vertical Federated Framework for Heterogeneous Multi-Task Clinical Prediction",
+  "description": "PRISM-VFL is a differentially private vertical federated learning framework for heterogeneous multi-task clinical prediction. It enables privacy-preserving collaborative training across institutions that hold disjoint feature sets for the same patients, supporting simultaneous prediction of multiple clinical outcomes (e.g., in-hospital mortality and decompensation) under formal (ε, δ)-differential privacy guarantees. This repository contains the full framework implementation, all experiments, results, and manuscript figures.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "cc-by-4.0",
+  "creators": [
+    {
+      "name": "Bumbuc, Roland V.",
+      "affiliation": "Amsterdam UMC / University of Amsterdam"
+    },
+    {
+      "name": "Soare, Amelia A.",
+      "affiliation": "University of Amsterdam"
+    },
+    {
+      "name": "Korkmaz, H. Ibrahim",
+      "affiliation": "Amsterdam UMC / Red Cross Hospital, Beverwijk"
+    },
+    {
+      "name": "Sheraton, Vivek M.",
+      "affiliation": "University of Amsterdam"
+    }
+  ],
+  "version": "1.0.0",
+  "publication_date": "2026-06-15",
+  "keywords": [
+    "vertical federated learning",
+    "differential privacy",
+    "multi-task learning",
+    "clinical prediction",
+    "federated learning",
+    "privacy-preserving machine learning",
+    "EHR",
+    "in-hospital mortality"
+  ],
+  "notes": "R.V.B. and A.A.S. contributed equally. H.I.K. and V.M.S. share last authorship.",
+  "language": "eng"
+}
