@@ -21,6 +21,7 @@
 # S7B    (S7B_DP_ABL2.png)             SRQ2/3 — DP ablation 2 (task coupling)
 # S7C    (S7C_DP_ABL3.png)             SRQ2/3 — DP ablation 3 (embed_dim × ε)
 # S8     (S8_PCMUSensitivity.png)      PCMU — Weight sensitivity surface
+# brier  (brier_nodp.png, brier_dp.png) Calibration curves (Brier score)
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -68,6 +69,10 @@ python3 figures/figS7_dp_ablations.py --abl 3
 echo ""
 echo "=== S8: PCMU weight sensitivity surface ==="
 python3 experiments/evaluate_phase4.py
+
+echo ""
+echo "=== Calibration curves (Brier score) ==="
+python3 figures/plot_brier.py
 
 echo ""
 echo "=== Done — all figures written to Manuscript/figures/ ==="

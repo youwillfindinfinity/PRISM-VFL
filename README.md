@@ -368,6 +368,9 @@ python figures/figS5_label_inference.py
 python figures/figS6_ablations.py
 python figures/figS7_dp_ablations.py
 python figures/pcmu_vs_epsilon.py
+python experiments/calibration_predictions.py --mode nodp --root .  
+python experiments/calibration_predictions.py --mode dp   --root .  
+python figures/plot_brier.py                                      
 ```
 
 | Script | Figure | Source CSV |
@@ -378,9 +381,10 @@ python figures/pcmu_vs_epsilon.py
 | `figure6_resilience_variance.py` | std(AUC) vs. ε (SRQ1) | `results/privacy_utility_combined.csv` |
 | `figure7_privacy_utility.py` | AUC vs. ε per task (SRQ2) | `results/privacy_utility_combined.csv` |
 | `figure8_pcmu.py` | PCMU Cleveland dot plot | `results/pcmu_paper_results.csv` |
-| `figS5_label_inference.py` | Label inference accuracy | `results/label_inference.csv` |
-| `figS6_ablations.py` | Architecture ablations | `results/ablations.csv`, `results/test_ablations.csv` |
-| `figS7_dp_ablations.py` | DP ablations | `results/dp_ablations.csv`, `results/test_ablations_dp.csv` |
+| `figS6_label_inference.py` | Label inference accuracy | `results/label_inference.csv` |
+| `figS7_ablations.py` | Architecture ablations | `results/ablations.csv`, `results/test_ablations.csv` |
+| `figS8_dp_ablations.py` | DP ablations | `results/dp_ablations.csv`, `results/test_ablations_dp.csv` |
+| `plot_brier.py` | Calibration curves (Brier score) | `results/predictions_nodp.csv`, `results/predictions_dp.csv` |
 
 ---
 
