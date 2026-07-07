@@ -368,9 +368,11 @@ python figures/figS5_label_inference.py
 python figures/figS6_ablations.py
 python figures/figS7_dp_ablations.py
 python figures/pcmu_vs_epsilon.py
-python experiments/calibration_predictions.py --mode nodp --root .  
-python experiments/calibration_predictions.py --mode dp   --root .  
-python figures/plot_brier.py                                      
+
+# Brier score calibration curves — generate predictions, then plot
+python experiments/calibration_predictions.py --mode nodp --root .
+python experiments/calibration_predictions.py --mode dp   --root .
+python figures/plot_brier.py
 ```
 
 | Script | Figure | Source CSV |
