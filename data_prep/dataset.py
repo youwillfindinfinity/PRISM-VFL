@@ -337,6 +337,7 @@ def build_site_loaders(
     batch_size: int = 32,
     num_workers: int = 0,
     max_seq_len: int = 48,
+    generator: "torch.Generator | None" = None,
 ) -> dict:
     """
     Build DataLoaders for all three sites for a given split.
@@ -349,6 +350,8 @@ def build_site_loaders(
     batch_size  : samples per batch
     num_workers : DataLoader worker processes (0 = main process only)
     max_seq_len : sequence length passed to VFLSiteDataset
+    generator   : optional shared torch.Generator for the train-split shuffle
+                  (reproducible per seed). None = unchanged behaviour.
 
     Returns
     -------
@@ -402,6 +405,7 @@ def build_site_loaders(
             collate_fn  = collate_fn,
             num_workers = num_workers,
             drop_last   = True,  # ensures all sites produce equal-sized batches for lockstep zip
+            generator   = generator,
         )
 
     return loaders

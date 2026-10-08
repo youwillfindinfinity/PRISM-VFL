@@ -47,7 +47,7 @@ from data_prep.dataset import build_site_loaders
 from fl.client import VFLClient
 from fl.fedavg import fedavg_aggregate
 from fl.fedprox import fedprox_penalty
-from fl.server import VFLServer
+from fl.server import VFLServer, _BCE, _weighted_bce
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +99,10 @@ class TrainConfig:
     # Stratified:  {'mode': 'stratified',  'sigma_ihm': 0.5, 'sigma_decomp': 1.0,
     #               'sigma_pheno': 1.5, 'max_grad_norm': 1.0, 'delta': 1e-5}
     privacy_config:     dict | None = None
+    # Training-instability diagnostics (default off; no effect on existing runs)
+    save_init_checkpoint: bool = False   # dump round-0 weights to checkpoints/init_{model_name}_seed{seed}.pt
+    init_from:          str | None = None  # load encoder+server weights from this checkpoint before round 0
+    grad_balance:       bool = False     # rescale each site's embedding gradient to unit norm
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +346,14 @@ def load_checkpoint(
     return int(ckpt["round"])
 
 
+def _finalize(results: list[dict], best_round: int, stopping_round: int) -> list[dict]:
+    """Stamp best/stopping round onto every row before returning."""
+    for r in results:
+        r["best_round"] = best_round
+        r["stopping_round"] = stopping_round
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Programmatic training entry point (used by experiment scripts)
 # ---------------------------------------------------------------------------
@@ -491,7 +503,15 @@ def run_training(
 
     ckpt_dir = Path(cfg.ckpt_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    # Training-instability diagnostics: dump/load round-0 weights (no effect unless requested)
+    if cfg.save_init_checkpoint:
+        save_checkpoint(ckpt_dir / f"init_{cfg.model_name}_seed{cfg.seed}.pt", 0, clients, server)
+    if cfg.init_from:
+        load_checkpoint(Path(cfg.init_from), clients, server)
+
     best_val_ihm = -1.0
+    best_round   = 0
     # Early stopping: track mean AUROC over tasks with nonzero weight.
     _active_auroc_keys = (
         (["ihm_auroc"]          if cfg.task_weights.get("ihm",   0) > 0 else []) +
@@ -521,6 +541,7 @@ def run_training(
             cfg.site_input_dims, _all_dims,
             cfg.fedprox_mu, global_encoder_params,
             compute_grad_sim=_compute_grad_sim,
+            grad_balance=cfg.grad_balance,
         )
 
         # ---- FedAvg ----
@@ -543,7 +564,7 @@ def run_training(
         if (rnd + 1) % cfg.eval_every == 0:
             round_val = {s: val_loaders[s] for s in active_sites}
             val_metrics = _evaluate_sites(clients, server, round_val, active_sites,
-                                          cfg.site_input_dims, _all_dims)
+                                          cfg.site_input_dims, _all_dims, compute_loss=True)
 
         elapsed = time.time() - t_round
         row = {
@@ -554,7 +575,8 @@ def run_training(
             "pheno_loss":   train_losses["pheno_loss"],
             "elapsed_s":    round(elapsed, 1),
         }
-        for _gs_key in ("grad_sim_ihm_decomp", "grad_sim_ihm_pheno", "grad_sim_decomp_pheno"):
+        for _gs_key in ("grad_sim_ihm_decomp", "grad_sim_ihm_pheno", "grad_sim_decomp_pheno",
+                        "grad_norm_ihm", "grad_norm_decomp", "grad_norm_pheno"):
             if _gs_key in train_losses:
                 row[_gs_key] = train_losses[_gs_key]
         # Step DP accountant and log per-task ε.
@@ -593,6 +615,9 @@ def run_training(
             row["val_decomp_auroc"]      = val_metrics.get("decomp_auroc",      float("nan"))
             row["val_decomp_auprc"]      = val_metrics.get("decomp_auprc",      float("nan"))
             row["val_pheno_macro_auroc"] = val_metrics.get("pheno_macro_auroc", float("nan"))
+            for _vl_key in ("val_ihm_loss", "val_decomp_loss", "val_pheno_loss"):
+                if _vl_key in val_metrics:
+                    row[_vl_key] = val_metrics[_vl_key]
             # Save best checkpoint (keyed by model_name so each config gets its own file)
             score = val_metrics.get("ihm_auroc", -1.0)
             if score > best_val_ihm:
@@ -601,41 +626,33 @@ def run_training(
                     ckpt_dir / f"best_{cfg.model_name}_seed{cfg.seed}.pt",
                     rnd + 1, clients, server,
                 )
-            # Early stopping: mean AUROC across active tasks.
-            # When uncertainty_weighting is on, weight each task's AUROC by its
-            # learned Kendall precision exp(-s_i) so that high-σ tasks (decomp)
-            # count less in checkpoint selection — consistent with the training objective.
-            if cfg.patience > 0 and _active_auroc_keys:
+            # Early stopping: plain mean AUROC across active tasks — identical rule
+            # regardless of training-time weighting scheme (uncertainty vs equal), so
+            # checkpoint selection is never itself a hidden variable in a comparison.
+            # best_round follows the same rule (tracked even when patience == 0).
+            if _active_auroc_keys:
                 present = [val_metrics[k] for k in _active_auroc_keys if k in val_metrics]
                 if present:
-                    if cfg.uncertainty_weighting and server.log_vars is not None:
-                        _task_map = {"ihm_auroc": "ihm", "decomp_auroc": "decomp",
-                                     "pheno_macro_auroc": "pheno"}
-                        _prec = {t: float(torch.exp(-server.log_vars[t]).item())
-                                 for t in server.log_vars}
-                        _w = [_prec.get(_task_map.get(k, k), 1.0)
-                              for k in _active_auroc_keys if k in val_metrics]
-                        _total = sum(_w) or 1.0
-                        mean_auroc = float(sum(
-                            w * v for w, v in zip(_w, present)
-                        ) / _total)
-                    else:
-                        mean_auroc = float(np.mean(present))
+                    mean_auroc = float(np.mean(present))
                     if mean_auroc > best_mean_auroc:
                         best_mean_auroc = mean_auroc
+                        best_round = rnd + 1
                         no_improve = 0
                     else:
                         no_improve += 1
-                    if no_improve >= cfg.patience:
+                    if cfg.patience > 0 and no_improve >= cfg.patience:
                         results.append(row)
                         print(f"[train] Early stop at round {rnd+1} "
                               f"(best mean AUROC={best_mean_auroc:.4f}, "
                               f"no improvement for {cfg.patience} rounds)")
-                        return results
+                        return _finalize(results, best_round, rnd + 1)
 
         results.append(row)
 
-    return results
+    return _finalize(results, best_round, cfg.n_rounds)
+
+
+_SITE_TASK = {"A": "ihm", "B": "decomp", "C": "pheno"}
 
 
 def _train_one_round_sites(
@@ -643,12 +660,14 @@ def _train_one_round_sites(
     site_input_dims, all_dims,
     fedprox_mu, global_encoder_params,
     compute_grad_sim: bool = False,
+    grad_balance: bool = False,
 ) -> dict[str, float]:
     """train_one_round generalised to arbitrary active_sites with feature truncation."""
     task_loss_sums = {"ihm": 0.0, "decomp": 0.0, "pheno": 0.0}
     total_loss_sum = 0.0
     n_batches = 0
     _grad_sim: dict[str, float] = {}
+    _grad_norm_sums = {"ihm": 0.0, "decomp": 0.0, "pheno": 0.0}
 
     loader_iters = [loaders[s] for s in active_sites]
 
@@ -699,7 +718,11 @@ def _train_one_round_sites(
 
         grads = server.get_embedding_gradients()
         for site in active_sites:
-            clients[site].receive_gradient(grads[site])
+            g = grads[site]
+            if grad_balance:
+                g = g / (g.norm(2, dim=-1, keepdim=True) + 1e-8)
+            _grad_norm_sums[_SITE_TASK[site]] += g.norm(2, dim=-1).mean().item()
+            clients[site].receive_gradient(g)
 
         if fedprox_mu > 0.0 and global_encoder_params is not None:
             for site in active_sites:
@@ -721,35 +744,54 @@ def _train_one_round_sites(
         "ihm_loss":    task_loss_sums["ihm"]    / n_batches,
         "decomp_loss": task_loss_sums["decomp"] / n_batches,
         "pheno_loss":  task_loss_sums["pheno"]  / n_batches,
+        "grad_norm_ihm":    _grad_norm_sums["ihm"]    / n_batches,
+        "grad_norm_decomp": _grad_norm_sums["decomp"] / n_batches,
+        "grad_norm_pheno":  _grad_norm_sums["pheno"]  / n_batches,
         **_grad_sim,
     }
 
 
 @torch.no_grad()
-def _evaluate_sites(clients, server, loaders, active_sites, site_input_dims, all_dims) -> dict[str, float]:
+def _evaluate_sites(clients, server, loaders, active_sites, site_input_dims, all_dims,
+                     compute_loss: bool = False) -> dict[str, float]:
     """evaluate() generalised to arbitrary active_sites with feature truncation."""
     all_preds:  dict[str, list] = {"ihm": [], "decomp": [], "pheno": []}
     all_labels: dict[str, list] = {"ihm": [], "decomp": [], "pheno": []}
+    loss_sums = {"ihm": 0.0, "decomp": 0.0, "pheno": 0.0}
+    n_batches = 0
 
     loader_iters = [loaders[s] for s in active_sites]
 
     for batches in zip(*loader_iters):
         embeddings = {}
+        labels = {}
         for site, (x, mask, y) in zip(active_sites, batches):
             dim = site_input_dims.get(site, all_dims[site])
             x = x[..., :dim]
             embeddings[site] = clients[site].eval_forward(x, mask)
             if site == "A":
-                all_labels["ihm"].append(y.numpy())
+                all_labels["ihm"].append(y.numpy()); labels["ihm"] = y
             elif site == "B":
-                all_labels["decomp"].append(y.numpy())
+                all_labels["decomp"].append(y.numpy()); labels["decomp"] = y
             elif site == "C":
-                all_labels["pheno"].append(y.numpy())
+                all_labels["pheno"].append(y.numpy()); labels["pheno"] = y
 
         preds = server.predict(embeddings)
         all_preds["ihm"].append(preds["ihm"].squeeze(-1).cpu().numpy())
         all_preds["decomp"].append(preds["decomp"].squeeze(-1).cpu().numpy())
         all_preds["pheno"].append(preds["pheno"].cpu().numpy())
+
+        if compute_loss:
+            if "ihm" in labels:
+                loss_sums["ihm"] += _BCE(preds["ihm"].squeeze(-1), labels["ihm"].to(server.device)).item()
+            if "decomp" in labels:
+                loss_sums["decomp"] += _weighted_bce(
+                    preds["decomp"].squeeze(-1), labels["decomp"].to(server.device).float(),
+                    server.decomp_pos_weight
+                ).item()
+            if "pheno" in labels:
+                loss_sums["pheno"] += _BCE(preds["pheno"], labels["pheno"].to(server.device)).item()
+            n_batches += 1
 
     # Fall back gracefully if a task has no labels (n_sites < 3)
     metrics: dict[str, float] = {}
@@ -763,6 +805,10 @@ def _evaluate_sites(clients, server, loaders, active_sites, site_input_dims, all
         y = np.concatenate(all_labels["decomp"])
         metrics["decomp_auroc"] = float(roc_auc_score(y, p))
         metrics["decomp_auprc"] = float(average_precision_score(y, p))
+    if compute_loss and n_batches:
+        metrics["val_ihm_loss"]    = loss_sums["ihm"]    / n_batches
+        metrics["val_decomp_loss"] = loss_sums["decomp"] / n_batches
+        metrics["val_pheno_loss"]  = loss_sums["pheno"]  / n_batches
     if all_labels["pheno"]:
         p = np.concatenate(all_preds["pheno"])
         y = np.concatenate(all_labels["pheno"])
