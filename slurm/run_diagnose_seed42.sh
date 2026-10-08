@@ -15,7 +15,10 @@ module load PyTorch/2.1.2-foss-2023a-CUDA-12.1.1
 
 cd "$SLURM_SUBMIT_DIR"
 
-pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/null
+# opacus >=1.5.4 needs torch >=2.4 (nn.RMSNorm); --no-deps stops pip pulling a newer torch into ~/.local
+pip install --quiet --user --no-deps "opacus>=1.4.0,<1.5.4" "scikit-multilearn>=0.2.0" 2>/dev/null
+
+set -e
 
 OUT=results_revision/seed42_probes.csv
 CKPT=checkpoints_revision
@@ -27,7 +30,7 @@ if [ "$1" = "2roundtest" ]; then
     EXTRA="--n_rounds 2"
 fi
 
-python revision_scripts/diagnose_seed42.py \
+python -u revision_scripts/diagnose_seed42.py \
     --splits_dir /home/asoare/vfl_mlt/data/vertical_splits \
     --output $OUT \
     --ckpt_dir $CKPT \
