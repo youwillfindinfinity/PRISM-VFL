@@ -50,8 +50,9 @@ SEEDS = [42, 123, 7]
 # ---------------------------------------------------------------------------
 
 def _real_test_loaders(root: str, batch_size: int, num_workers: int = 0,
-                       max_seq_len: int = 48) -> dict:
-    return build_site_loaders(Path(root), "test", batch_size, num_workers, max_seq_len)
+                       max_seq_len: int = 48, align_stays: bool = False) -> dict:
+    return build_site_loaders(Path(root), "test", batch_size, num_workers, max_seq_len,
+                              align_stays=align_stays)
 
 
 def _synthetic_test_loaders(batch_size: int, seed: int) -> dict:
@@ -286,6 +287,8 @@ def main():
     p.add_argument("--root",         default=".")
     p.add_argument("--ckpt_dir",     default="checkpoints")
     p.add_argument("--batch_size",   type=int, default=64)
+    p.add_argument("--align_stays", action="store_true",
+                   help="same ICU stay at the same row across sites (use for models trained with it)")
     p.add_argument("--embed_dim",    type=int, default=64,
                    help="VFL-MTL per-site embed dim (must match training)")
     p.add_argument("--device",       default="cuda" if __import__("torch").cuda.is_available() else "cpu")
@@ -305,7 +308,7 @@ def main():
     if args.use_synthetic:
         site_loaders = _synthetic_test_loaders(args.batch_size, seed=42)
     else:
-        site_loaders = _real_test_loaders(args.root, args.batch_size)
+        site_loaders = _real_test_loaders(args.root, args.batch_size, align_stays=args.align_stays)
 
     all_rows: list[dict] = []
 

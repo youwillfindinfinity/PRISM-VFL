@@ -343,6 +343,8 @@ def main() -> None:
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
     parser.add_argument("--batch_size",    type=int, default=64)
+    parser.add_argument("--align_stays", action="store_true",
+                        help="same ICU stay at the same row across sites (use for models trained with it)")
     parser.add_argument("--max_seq_len",   type=int, default=48)
     parser.add_argument("--num_workers",   type=int, default=4)
     parser.add_argument("--device",        default="cuda" if torch.cuda.is_available() else "cpu")
@@ -382,10 +384,12 @@ def main() -> None:
         train_loaders = build_site_loaders(
             project_root, "train", args.batch_size,
             num_workers=args.num_workers, max_seq_len=args.max_seq_len,
+            align_stays=args.align_stays,
         )
         test_loaders  = build_site_loaders(
             project_root, "test", args.batch_size,
             num_workers=args.num_workers, max_seq_len=args.max_seq_len,
+            align_stays=args.align_stays,
         )
 
     # Evaluate

@@ -55,25 +55,14 @@ FIELDNAMES = [
 ]
 
 
-def _check_row_alignment(splits_dir: str) -> None:
-    """Log-only sanity check: do the three site CSVs share subject_id row order?"""
-    splits_dir = Path(splits_dir)
-    aligned_path = splits_dir / "aligned_patient_ids.csv"
-    if not aligned_path.exists():
-        print("[check] aligned_patient_ids.csv not found — skipping row-alignment check")
-        return
-    aligned = pd.read_csv(aligned_path)
-    ids = {s: set(aligned.loc[aligned.split == s, "subject_id"]) for s in ("train", "val")}
-    site_csvs = {"A": "site_A_vitals.csv", "B": "site_B_labs.csv", "C": "site_C_composite.csv"}
+def _check_row_alignment(prebuilt: dict) -> None:
+    """Stop before training unless every site sees the same stay at the same row."""
     for split in ("train", "val"):
-        rows = {}
-        for site, fname in site_csvs.items():
-            df = pd.read_csv(splits_dir / fname, usecols=["subject_id", "split"])
-            df = df[df.split == split].reset_index(drop=True)
-            df = df[df.subject_id.isin(ids[split])].reset_index(drop=True)
-            rows[site] = df["subject_id"].tolist()
-        ok = rows["A"] == rows["B"] == rows["C"]
-        print(f"[check] {split} row alignment across sites: {'OK' if ok else 'MISMATCH'}")
+        stays = [prebuilt[split][s].dataset.stays for s in "ABC"]
+        assert stays[0] == stays[1] == stays[2], f"{split}: stays differ across sites"
+    order = [list(prebuilt["train"][s].sampler) for s in "ABC"]
+    assert order[0] == order[1] == order[2], "train: shuffle order differs across sites"
+    print(f"[check] row alignment across sites: OK ({len(order[0])} train stays)")
 
 
 def main() -> None:
@@ -99,23 +88,11 @@ def main() -> None:
         if args.ckpt_dir == parser.get_default("ckpt_dir"):
             args.ckpt_dir = "smoke_tests/revision1/checkpoints"
 
-    if not args.use_synthetic:
-        _check_row_alignment(args.splits_dir)
-
-    decomp_pos_weight = 1.0
-    if not args.use_synthetic:
-        site_b_csv = Path(args.splits_dir) / "site_B_labs.csv"
-        _b = pd.read_csv(site_b_csv, usecols=["y_decomp", "split"])
-        pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-        decomp_pos_weight = (1.0 - pos_rate) / pos_rate
-        print(f"[sweep] decomp pos_weight={decomp_pos_weight:.1f} (pos_rate={pos_rate:.3%})")
-
     base_kwargs = dict(
         splits_dir=args.splits_dir, n_rounds=args.n_rounds, batch_size=args.batch_size,
         device=args.device, patience=args.patience, ckpt_dir=args.ckpt_dir,
         use_fedavg=True, fedavg_every=5, eval_every=1, grad_sim_every=5,
         use_synthetic=args.use_synthetic, n_synthetic=args.n_synthetic,
-        decomp_pos_weight=decomp_pos_weight,
     )
 
     if args.use_synthetic:
@@ -147,10 +124,17 @@ def main() -> None:
             prebuilt = None
         else:
             prebuilt = {
-                "train": build_site_loaders(project_root, "train", args.batch_size, generator=g),
-                "val":   build_site_loaders(project_root, "val",   args.batch_size, generator=g),
-                "decomp_pos_weight": decomp_pos_weight,
+                "train": build_site_loaders(project_root, "train", args.batch_size,
+                                            generator=g, align_stays=True),
+                "val":   build_site_loaders(project_root, "val",   args.batch_size,
+                                            generator=g, align_stays=True),
             }
+            _check_row_alignment(prebuilt)
+            # Class weight from the rows actually trained on (after alignment).
+            pos_rate = float(prebuilt["train"]["B"].dataset.labels.mean())
+            prebuilt["decomp_pos_weight"] = (1.0 - pos_rate) / pos_rate
+            print(f"[sweep] decomp pos_weight={prebuilt['decomp_pos_weight']:.1f} "
+                  f"(pos_rate={pos_rate:.3%})")
             sample_rate = 1.0 / max(len(prebuilt["train"]["A"]), 1)
 
         def _run(model_name, arm, eps, weighting, uncertainty_weighting, task_weights):

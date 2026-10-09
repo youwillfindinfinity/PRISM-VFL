@@ -42,4 +42,11 @@ python -u revision_scripts/run_prism_privacy_sweep.py \
     --ckpt_dir $CKPT \
     --device cuda $EXTRA
 
-echo "[prism_privacy_sweep] Done. Results in $OUT"
+python -u revision_scripts/evaluate_test_prism_privacy_sweep.py \
+    --splits_dir /home/asoare/vfl_mlt/data/vertical_splits \
+    --input $OUT \
+    --ckpt_dir $CKPT \
+    --output ${OUT%.csv}_test.csv \
+    --device cuda
+
+echo "[prism_privacy_sweep] Done. Results in $OUT and ${OUT%.csv}_test.csv"

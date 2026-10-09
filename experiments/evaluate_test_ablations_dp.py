@@ -261,6 +261,8 @@ def main() -> None:
     parser.add_argument("--ckpt_dir",      default="checkpoints")
     parser.add_argument("--output",        default="results/test_ablations_dp.csv")
     parser.add_argument("--batch_size",    type=int, default=64)
+    parser.add_argument("--align_stays", action="store_true",
+                        help="same ICU stay at the same row across sites (use for models trained with it)")
     parser.add_argument("--device",        default="cpu")
     parser.add_argument("--use_synthetic", action="store_true")
     args = parser.parse_args()
@@ -286,8 +288,10 @@ def main() -> None:
     else:
         project_root = Path(args.root)
         print("[evaluate_test_ablations_dp] Loading train and test data loaders...")
-        train_loaders = build_site_loaders(project_root, "train", args.batch_size)
-        test_loaders  = build_site_loaders(project_root, "test",  args.batch_size)
+        train_loaders = build_site_loaders(project_root, "train", args.batch_size,
+                                           align_stays=args.align_stays)
+        test_loaders  = build_site_loaders(project_root, "test",  args.batch_size,
+                                           align_stays=args.align_stays)
 
     all_rows: list[dict] = []
 

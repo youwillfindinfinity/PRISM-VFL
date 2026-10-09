@@ -638,6 +638,10 @@ def run_training(
                         best_mean_auroc = mean_auroc
                         best_round = rnd + 1
                         no_improve = 0
+                        save_checkpoint(
+                            ckpt_dir / f"bestmean_{cfg.model_name}_seed{cfg.seed}.pt",
+                            rnd + 1, clients, server,
+                        )
                     else:
                         no_improve += 1
                     if cfg.patience > 0 and no_improve >= cfg.patience:

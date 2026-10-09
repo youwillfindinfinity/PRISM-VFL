@@ -23,7 +23,6 @@ import csv
 import sys
 from pathlib import Path
 
-import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -45,16 +44,16 @@ FIELDNAMES = [
 ]
 
 
-def _build_prebuilt(args, decomp_pos_weight):
+def _build_prebuilt(args):
     if args.use_synthetic:
         return None
     g = torch.Generator().manual_seed(SEED)
     project_root = Path(args.splits_dir).parents[1]
-    return {
-        "train": build_site_loaders(project_root, "train", args.batch_size, generator=g),
-        "val":   build_site_loaders(project_root, "val",   args.batch_size, generator=g),
-        "decomp_pos_weight": decomp_pos_weight,
-    }
+    train = build_site_loaders(project_root, "train", args.batch_size, generator=g, align_stays=True)
+    val   = build_site_loaders(project_root, "val",   args.batch_size, generator=g, align_stays=True)
+    # Class weight from the rows actually trained on (after alignment).
+    pos_rate = float(train["B"].dataset.labels.mean())
+    return {"train": train, "val": val, "decomp_pos_weight": (1.0 - pos_rate) / pos_rate}
 
 
 def main() -> None:
@@ -77,17 +76,11 @@ def main() -> None:
         if args.ckpt_dir == parser.get_default("ckpt_dir"):
             args.ckpt_dir = "smoke_tests/revision1/checkpoints"
 
-    decomp_pos_weight = 1.0
-    if not args.use_synthetic:
-        _b = pd.read_csv(Path(args.splits_dir) / "site_B_labs.csv", usecols=["y_decomp", "split"])
-        pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-        decomp_pos_weight = (1.0 - pos_rate) / pos_rate
-
     base_kwargs = dict(
         splits_dir=args.splits_dir, n_rounds=args.n_rounds, batch_size=args.batch_size,
         device=args.device, ckpt_dir=args.ckpt_dir, use_fedavg=True, fedavg_every=5,
         eval_every=1, grad_sim_every=1, use_synthetic=args.use_synthetic,
-        n_synthetic=args.n_synthetic, decomp_pos_weight=decomp_pos_weight,
+        n_synthetic=args.n_synthetic,
         task_weights={"ihm": 1.0, "decomp": 1.0, "pheno": 1.0}, uncertainty_weighting=False,
     )
 
@@ -98,7 +91,7 @@ def main() -> None:
         save_init_checkpoint=True, **donor_kwargs,
     )
     print("=== building seed-123 init donor ===")
-    run_training(donor_cfg, prebuilt_loaders=_build_prebuilt(args, decomp_pos_weight))
+    run_training(donor_cfg, prebuilt_loaders=_build_prebuilt(args))
     init_donor_path = f"{args.ckpt_dir}/init_probe-init-donor_seed{INIT_DONOR_SEED}.pt"
 
     out_path = Path(args.output)
@@ -121,7 +114,7 @@ def main() -> None:
 
         cfg = TrainConfig(seed=SEED, model_name=f"probe-{probe}", **probe_kwargs)
         print(f"\n=== probe={probe} ===")
-        rows = run_training(cfg, prebuilt_loaders=_build_prebuilt(args, decomp_pos_weight))
+        rows = run_training(cfg, prebuilt_loaders=_build_prebuilt(args))
         for r in rows:
             r["probe"] = probe
 

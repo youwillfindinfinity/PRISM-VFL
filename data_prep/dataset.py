@@ -46,7 +46,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 # ---------------------------------------------------------------------------
 # YerevaNN LOS binning utilities (dead code — kept for los_bins path only)
@@ -327,6 +327,26 @@ def collate_fn(batch: list) -> tuple:
     )
 
 
+class _SharedShuffle(Sampler):
+    """Row order for one site loader; all sites of a split reuse the same permutation each epoch."""
+
+    def __init__(self, n: int, generator: torch.Generator, shared: dict):
+        self.n, self.generator, self.shared = n, generator, shared
+        self._used = None
+
+    def __len__(self) -> int:
+        return self.n
+
+    def __iter__(self):
+        s, g = self.shared, self.generator
+        # New permutation once this site has used the current one, or after a reseed.
+        if self._used is s.get("perm") or not torch.equal(g.get_state(), s["state"]):
+            s["perm"]  = torch.randperm(self.n, generator=g).tolist()
+            s["state"] = g.get_state()
+        self._used = s["perm"]
+        return iter(s["perm"])
+
+
 # ---------------------------------------------------------------------------
 # Convenience builder — constructs all three site loaders at once
 # ---------------------------------------------------------------------------
@@ -338,6 +358,7 @@ def build_site_loaders(
     num_workers: int = 0,
     max_seq_len: int = 48,
     generator: "torch.Generator | None" = None,
+    align_stays: bool = False,
 ) -> dict:
     """
     Build DataLoaders for all three sites for a given split.
@@ -352,6 +373,9 @@ def build_site_loaders(
     max_seq_len : sequence length passed to VFLSiteDataset
     generator   : optional shared torch.Generator for the train-split shuffle
                   (reproducible per seed). None = unchanged behaviour.
+    align_stays : keep only stays present at all three sites, in the same row
+                  order, and shuffle the sites together, so row i is the same
+                  ICU stay at every site. False = unchanged behaviour.
 
     Returns
     -------
@@ -386,9 +410,8 @@ def build_site_loaders(
         ),
     }
 
-    loaders = {}
-    for site_id, cfg in configs.items():
-        ds = VFLSiteDataset(
+    datasets = {
+        site_id: VFLSiteDataset(
             site_csv        = cfg["site_csv"],
             feature_cols    = cfg["feature_cols"],
             label_col       = cfg["label_col"],
@@ -398,10 +421,33 @@ def build_site_loaders(
             max_seq_len     = max_seq_len,
             task_type       = cfg["task_type"],
         )
+        for site_id, cfg in configs.items()
+    }
+
+    shuffle = (split == "train")
+    shared  = None
+    if align_stays:
+        common = sorted(set.intersection(*(set(ds.stays) for ds in datasets.values())))
+        for ds in datasets.values():
+            pos = {stay: i for i, stay in enumerate(ds.stays)}
+            idx = [pos[stay] for stay in common]
+            ds.subject_ids = [ds.subject_ids[i] for i in idx]
+            ds.labels      = ds.labels[idx]
+            ds.stays       = common
+        if shuffle:
+            shared = {}
+            if generator is None:
+                generator = torch.Generator().manual_seed(
+                    int(torch.empty((), dtype=torch.int64).random_().item())
+                )
+
+    loaders = {}
+    for site_id, ds in datasets.items():
         loaders[site_id] = DataLoader(
             ds,
             batch_size  = batch_size,
-            shuffle     = (split == "train"),
+            shuffle     = shuffle and shared is None,
+            sampler     = _SharedShuffle(len(ds), generator, shared) if shared is not None else None,
             collate_fn  = collate_fn,
             num_workers = num_workers,
             drop_last   = True,  # ensures all sites produce equal-sized batches for lockstep zip

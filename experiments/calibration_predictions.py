@@ -172,7 +172,7 @@ def _write_rows_dp(writer, eps: float, mode: str, seed: int,
 def run_nodp(args):
     root     = Path(args.root)
     ckpt_dir = root / args.ckpt_dir
-    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48)
+    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48, align_stays=args.align_stays)
     out      = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -220,7 +220,7 @@ def run_nodp(args):
 def run_dp(args):
     root     = Path(args.root)
     ckpt_dir = root / args.ckpt_dir
-    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48)
+    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48, align_stays=args.align_stays)
     out      = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -253,6 +253,8 @@ def main():
     p.add_argument("--root",       default=".")
     p.add_argument("--ckpt_dir",   default="checkpoints")
     p.add_argument("--batch_size", type=int, default=64)
+    p.add_argument("--align_stays", action="store_true",
+                   help="same ICU stay at the same row across sites (use for models trained with it)")
     p.add_argument("--device",     default="cpu")
     p.add_argument("--output",     default=None)
     args = p.parse_args()

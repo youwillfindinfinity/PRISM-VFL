@@ -169,6 +169,8 @@ def main():
     p.add_argument("--root",          default=".")
     p.add_argument("--ckpt_dir",      default="checkpoints")
     p.add_argument("--batch_size",    type=int, default=64)
+    p.add_argument("--align_stays", action="store_true",
+                   help="same ICU stay at the same row across sites (use for models trained with it)")
     p.add_argument("--device",        default="cpu")
     p.add_argument("--output",        default="results/test_ablations.csv")
     p.add_argument("--use_synthetic", action="store_true")
@@ -198,7 +200,8 @@ def main():
                 batch_size=args.batch_size, drop_last=True),
         }
     else:
-        loaders = build_site_loaders(Path(args.root), "test", args.batch_size)
+        loaders = build_site_loaders(Path(args.root), "test", args.batch_size,
+                                     align_stays=args.align_stays)
 
     all_rows = eval_ablations(ckpt_dir, loaders, args.device)
 
