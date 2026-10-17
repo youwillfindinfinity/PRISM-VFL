@@ -21,6 +21,7 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE
 from train import _evaluate_sites, make_synthetic_loaders
 from data_prep.dataset import build_site_loaders
 from fl.client import VFLClient
@@ -45,7 +46,7 @@ def main() -> None:
     parser.add_argument("--input",       default="results_revision/prism_privacy_sweep.csv")
     parser.add_argument("--ckpt_dir",    default="checkpoints_revision")
     parser.add_argument("--output",      default="results_revision/prism_privacy_sweep_test.csv")
-    parser.add_argument("--batch_size",  type=int, default=64)
+    parser.add_argument("--batch_size",  type=int, default=BATCH_SIZE)
     parser.add_argument("--device",      default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--use_synthetic", action="store_true")
     args = parser.parse_args()
@@ -66,11 +67,8 @@ def main() -> None:
     if args.use_synthetic:
         loaders = make_synthetic_loaders(args.batch_size, 48, 4)
     else:
-        loaders = build_site_loaders(Path(args.splits_dir).parents[1], "test",
-                                     args.batch_size, align_stays=True)
-        stays = [loaders[s].dataset.stays for s in SITES]
-        assert stays[0] == stays[1] == stays[2], "test: stays differ across sites"
-        print(f"[eval] test stays, same row at every site: {len(stays[0])}")
+        loaders = build_site_loaders(Path(args.splits_dir).parents[1], "test", args.batch_size)
+        print(f"[eval] aligned test stays: {len(loaders['A'].dataset)}")
 
     clients = {s: VFLClient(input_dim=SITE_DIMS[s], device=args.device) for s in SITES}
     server = VFLServer(device=args.device)

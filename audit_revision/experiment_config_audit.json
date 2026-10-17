@@ -1,0 +1,125 @@
+{
+  "T11_TASK_WEIGHTING_POLICY": {
+    "generated": "2026-10-17",
+    "manuscript_policy": {
+      "eq3": "L = L_ihm + L_decomp + L_pheno ('The total training loss uses equal task weights', §2.4.2, p.16)",
+      "limitations_4_1": "'uncertainty weighting was enabled in the DP sweep experiments (privacy_utility_curves.py) but not in the base architecture experiments (run_exp1.py), which used equal task weights. This difference is a potential confound ...'"
+    },
+
+    "report": {
+      "base_experiment_weighting": "uncertainty (Kendall et al. 2018) for VFL-MTL; single-task baselines: n/a (one active task)",
+      "dp_experiment_weighting": "uncertainty",
+      "whether_comparison_is_confounded": "Not by task weighting: base (run_exp1) and DP sweep (privacy_utility_curves) both used uncertainty weighting. They did differ in patience (15 vs 0) and seed sets, which are the actual confounds (both fixed: T10 patience 15 everywhere; revision sweep runs both on seeds 7,42,123,0-6). The manuscript's claim of equal weights (Eq. 3) and its §4.1 description of the confound are both inconsistent with the code that produced the results."
+    },
+
+    "evidence": {
+      "method": "Uncertainty-weighted runs log the learned per-task sigma (train.py: row['sigma_{task}'] only when uncertainty_weighting is on). Fraction of rows with sigma_* filled in the published result CSVs:",
+      "results/exp1.csv": {"VFL-MTL": 1.0, "ST-IHM": 0.0, "ST-Decomp": 0.0, "ST-Pheno": 0.0},
+      "results/privacy_utility_combined.csv": "1.0 at every epsilon and mode (learned sigma_ihm ~0.894, sigma_decomp ~1.083, sigma_pheno ~0.891)",
+      "results/exp2.csv": {"all_tasks": 1.0, "ihm_decomp": 1.0, "ihm_only": 0.0, "ihm_pheno": 0.0},
+      "results/exp3.csv": "1.0 for n_sites 2 and 3",
+      "results/ablations.csv": "UNKNOWN - CSV has no sigma_* columns; code configured uncertainty weighting for the VFL-MTL reference",
+      "code_before_fix": [
+        "experiments/run_exp1.py: VFL-MTL uncertainty_weighting=True",
+        "experiments/privacy_utility_curves.py: uncertainty_weighting=True",
+        "experiments/run_exp2.py: True for all_tasks and ihm_decomp, False for ihm_only and ihm_pheno",
+        "experiments/run_exp3.py: True for n_sites 2 and 3",
+        "experiments/run_ablations.py: VFL-MTL reference True",
+        "experiments/run_factorial_pcmu.py: True when more than one task is active",
+        "experiments/ablations_dp.py: False"
+      ]
+    },
+
+    "decision": {
+      "status": "PASS",
+      "chosen": "A - equal weights everywhere; Eq. 3 kept as written",
+      "decided_by": "author (2026-10-17), re-confirmed after the evidence above",
+      "rationale": [
+        "All experiments are rerun anyway (alignment fix, T16), so A and B cost the same.",
+        "Fixed weights keep the privacy-utility analysis clean: learned weights shift with DP noise, mixing the noise effect with re-weighting (R1-Q4).",
+        "Matches the method the manuscript already describes (Eq. 3).",
+        "The effect of weighting stays measured: the revision sweep keeps uncertainty weighting as a labelled side arm at epsilon = inf and 5."
+      ],
+      "supervisor_note": "Inform supervisor: published multi-task runs used uncertainty weighting; corrected runs standardise on equal weights per Eq. 3, uncertainty kept as a side experiment."
+    },
+
+    "after_fix": {
+      "uncertainty_weighting_used_only_in": "revision_scripts/run_prism_privacy_sweep.py arm 2 (weighting='uncertainty', epsilon in {inf, 5})",
+      "files_changed": [
+        "experiments/run_exp1.py", "experiments/run_exp2.py", "experiments/run_exp3.py",
+        "experiments/run_ablations.py", "experiments/privacy_utility_curves.py",
+        "experiments/run_factorial_pcmu.py", "revision_scripts/run_prism_privacy_sweep.py (ST arm passes False explicitly)",
+        "smoke_tests/_regression_check.py"
+      ],
+      "verification": "configs import with equal weights only; synthetic sweep: equal arm logs no learned sigma, uncertainty arm does; pytest + regression check pass; no files written outside smoke_tests/"
+    },
+
+    "manuscript_updates_for_T17": [
+      "Keep Eq. 3 (now true for all reported runs).",
+      "Rewrite the §4.1 weighting sentence: the confound it describes did not exist as stated; corrected runs use equal weights throughout.",
+      "Response letter: disclose that the original multi-task results used uncertainty weighting contrary to Eq. 3, and that all results were rerun with equal weights."
+    ]
+  },
+
+  "T13_SINGLE_SOURCE_CONFIG": {
+    "generated": "2026-10-17",
+    "status": "PASS",
+    "source_of_truth": "experiment_config.py (repo root)",
+    "required_fields": {
+      "seed": "SEEDS = [42, 123, 7] (manuscript experiments); SWEEP_SEEDS = [7, 42, 123, 0..6] (revision sweep)",
+      "batch_size": "BATCH_SIZE = 64",
+      "learning_rate": "LEARNING_RATE = 1e-3",
+      "max_rounds": "MAX_ROUNDS = 100",
+      "patience": "PATIENCE = 15",
+      "task_weighting": "TASK_WEIGHTS = equal (Eq. 3); uncertainty weighting only in the sweep side arm (T11)",
+      "aligned_ntrain": "run-time value, logged in [run_config] (14,679 on real data)",
+      "clipping_norm": "CLIPPING_NORM = 1.0",
+      "delta": "DELTA = 1e-5",
+      "sigma_by_task": "run-time value (calibrated from q, rounds, delta, target epsilon), logged in [run_config]",
+      "epsilon_target_or_derived": "targets EPSILON_LEVELS = [inf, 10, 5, 2, 1, 0.5]; epsilon spent logged per round in the epsilon_* result columns",
+      "checkpoint_selection_metric": "CHECKPOINT_SELECTION = best mean validation AUROC over active tasks (T10)",
+      "git_commit": "read from .git files by experiment_config.git_commit(), logged in [run_config]"
+    },
+    "run_time_logging": "train.run_training prints one '[run_config] {json}' line per run in the job log: model, seed, git commit, command line, start time, torch version, device, batch size, lr, max rounds, patience, task weights, uncertainty flag, aligned N_train, batches per round, DP on/off, C, delta, q, sigma per task, checkpoint rule, decomp pos_weight",
+    "readers": {
+      "training": "train.TrainConfig defaults; run_exp1/2/3, run_ablations, ablations_dp, privacy_utility_curves, run_factorial_pcmu, baselines/local_only, baselines/centralized, revision sweep and probes",
+      "evaluation": "evaluate_test, evaluate_test_dp, evaluate_test_ablations_dp, evaluate_exp2, evaluate_exp3, evaluate_ablations, calibration_predictions, run_baselines, evaluate_test_prism_privacy_sweep",
+      "attacks": "label_inference, embedding_mia (seeds, epsilon levels, batch size)",
+      "reporting": "validate_bound (delta, C, epsilon levels); [run_config] lines + result rows for every run"
+    },
+    "values_changed": {
+      "run_factorial_pcmu.py": "author decision A: batch 256 -> 64; sigma calibrated with q = 1 / train batches per round (was the hard-coded 256/10,000); loaders built once. PCMU is rerun in T16.",
+      "train.TrainConfig n_rounds default": "50 -> 100 (manuscript max rounds; every script already passed 100)",
+      "all other constants": "unchanged - verified identical to the previous hard-coded values"
+    },
+    "not_centralised": {
+      "train.py main() CLI": "legacy standalone entry point (batch 32, 50 rounds), not used by any manuscript experiment or SLURM job",
+      "attacks/feature_reconstruction.py --batch_size 128 / --lr 1e-3": "the attack decoder's own training settings, not the model's",
+      "attacks/label_inference.py --n_rounds 50": "only used to rebuild an old checkpoint path"
+    },
+    "also_fixed": "run_factorial_pcmu.py --use_synthetic now writes only to smoke_tests/revision1/ (CSVs and checkpoints); added --ckpt_dir",
+    "verification": "constants imported by every script equal the old literals; [run_config] printed for each of 11 sweep runs and the PCMU run (commit 98c896a read from .git); pytest + regression check pass; no files written to results/ or checkpoints/"
+  },
+
+  "T14_CLI_SLURM_AUDIT": {
+    "generated": "2026-10-17",
+    "status": "PASS",
+    "bash_n": "all 12 slurm/*.sh pass",
+    "flag_check": "every --flag in every python call of slurm/*.sh compared with the target script's --help: before 11/15 calls had unknown flags (job would exit at startup); after 15/15 pass",
+    "fixes": {
+      "run_exp1/2/3.sh, run_ablations.sh, run_dp_ablations.sh, run_eps_sweep.sh": "removed --save_checkpoint (run_training always saves the bestmean checkpoint, T10)",
+      "run_eps_sweep.sh": "--epsilon -> --epsilon_levels",
+      "run_attacks.sh": "removed --seed from label_inference and embedding_mia (they loop over SEEDS)",
+      "run_baselines.sh": "removed unknown --splits_dir/--device (script takes --root, default '.')",
+      "run_factorial_pcmu.sh": "--output/--rounds_output -> --out_summary/--out_rounds",
+      "run_validate_bound.sh": "--results_dir -> --label_inference_csv; added --splits_dir (otherwise q silently falls back to 1/100); removed --device",
+      "run_prism_privacy_sweep.sh, run_diagnose_seed42.sh": "absolute /home/asoare/vfl_mlt/... -> relative data/vertical_splits (no machine-specific paths left in slurm/)"
+    },
+    "data_location": "jobs cd to $SLURM_SUBMIT_DIR (~/PRISM-VFL) and read data/vertical_splits and data/mimic3-benchmarks relative to it; on Snellius these are links to ~/vfl_mlt/data/*. .gitignore rules changed to data/vertical_splits and data/mimic3-benchmarks (no trailing slash) so the links are ignored by git.",
+    "for_T16_not_changed": [
+      "Old jobs write to results/ and checkpoints/ - would overwrite the original outputs on Snellius; reruns should use separate output folders.",
+      "run_eps_sweep.sh array has no epsilon=inf and does not pass --run_stratified for epsilon=5.",
+      "All job files set #SBATCH --account=ausei18360 while the shell sets SBATCH_ACCOUNT=gisr114984 (the environment variable wins)."
+    ]
+  }
+}

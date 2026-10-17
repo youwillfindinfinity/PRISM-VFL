@@ -40,6 +40,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, LEARNING_RATE, PATIENCE
 
 from data_prep.dataset import (
     VFLSiteDataset,
@@ -194,7 +195,7 @@ def train_local(
     embed_dim:        int = 192,
     hidden_dim:       int = 128,
     prebuilt_loaders: dict = None,
-    patience:         int = 10,
+    patience:         int = 15,
     ckpt_dir:         str | None = None,
     decomp_pos_weight: float = 0.0,  # 0.0 = auto-compute from CSV (Site B only)
 ) -> list[dict]:
@@ -338,13 +339,13 @@ def main():
     parser.add_argument("--site",          required=True, choices=["A", "B", "C"])
     parser.add_argument("--root",          default=".")
     parser.add_argument("--n_epochs",      type=int,   default=50)
-    parser.add_argument("--lr",            type=float, default=1e-3)
-    parser.add_argument("--batch_size",    type=int,   default=64)
+    parser.add_argument("--lr",            type=float, default=LEARNING_RATE)
+    parser.add_argument("--batch_size",    type=int,   default=BATCH_SIZE)
     parser.add_argument("--seeds",         type=int,   nargs="+", default=[42, 123, 7])
     parser.add_argument("--num_workers",   type=int,   default=0)
     parser.add_argument("--output",        default=None)
     parser.add_argument("--use_synthetic", action="store_true")
-    parser.add_argument("--patience",      type=int,   default=10)
+    parser.add_argument("--patience",      type=int,   default=PATIENCE)
     parser.add_argument("--ckpt_dir",      default="checkpoints")
     args = parser.parse_args()
 

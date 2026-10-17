@@ -14,6 +14,10 @@ plots/*.png
 # Model checkpoints (large binaries)
 checkpoints/*.pt
 checkpoints/*.pth
+checkpoints_revision/
+
+# Local smoke-test outputs (synthetic models and CSVs)
+smoke_tests/revision1/
 
 # SLURM logs
 logs/*.out
@@ -21,8 +25,8 @@ logs/*.err
 
 # Data (not redistributable — see data/DATA_SETUP.md)
 data/mimic-raw/
-data/mimic3-benchmarks/
-data/vertical_splits/
+data/mimic3-benchmarks
+data/vertical_splits
 
 # Manuscript (LaTeX source and figures — not part of the code release)
 Manuscript/

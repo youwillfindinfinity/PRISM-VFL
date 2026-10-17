@@ -1,0 +1,94 @@
+{
+  "task": "T04_AUDIT_ALIGNMENT_CODE_PATH",
+  "generated": "2026-10-17",
+  "code_state": "HEAD 98c896a (revision-1), read-only static inspection; no code executed",
+  "classification_rule": {
+    "PASS": "every loader/sample used by this entry point is the same ICU stay at every participating site, in the same order (or the entry point uses a single site / a single stay-intersected dataset, so no cross-site correspondence is needed)",
+    "FAIL": "multi-site loaders built with patient-level filtering only (align_stays off), so rows are not stay-aligned and/or shuffled independently per site",
+    "UNKNOWN": "cannot be decided from code alone"
+  },
+
+  "required_findings": {
+    "psi_aligns_subject_or_stay": {
+      "answer": "subject_id only",
+      "evidence": "data_prep/psi_alignment.py:51-55 compute_psi_alignment(id_col='subject_id') intersects hashed subject_ids; stratify_aligned_cohort (:150-215) deduplicates per subject_id and writes {subject_id, split}. aligned_patient_ids.csv has no stay column (T02)."
+    },
+    "dataset_explicitly_intersects_stays": {
+      "answer": "only when align_stays=True",
+      "evidence": "VFLSiteDataset.__init__ (data_prep/dataset.py:167-181) filters site rows by split and subject_id only. Stay intersection exists only in build_site_loaders when align_stays=True (dataset.py:429-436) and independently in baselines/centralized.py:111-119 (CentralizedDataset)."
+    },
+    "stay_alignment_mandatory_or_optional": {
+      "answer": "optional, default OFF",
+      "evidence": "build_site_loaders(..., align_stays: bool = False) (dataset.py:361). train.run_training's own loader path (train.py:422-427) never passes it. Evaluators expose --align_stays as an opt-in flag (store_true, default False)."
+    },
+    "all_paper_entry_points_same_alignment": {
+      "answer": "NO",
+      "evidence": "Only the 3 revision scripts enable it (run_prism_privacy_sweep.py, diagnose_seed42.py, evaluate_test_prism_privacy_sweep.py). All manuscript training entry points, both multi-site attacks, validate_bound and ablations_dp use the default (off). 7 evaluators support it only when --align_stays is passed. centralized baseline is stay-aligned by its own code, so the VFL vs centralized comparison used different cohorts."
+    },
+    "shared_permutation_across_sites": {
+      "answer": "only when align_stays=True (train split)",
+      "evidence": "align_stays=True: one _SharedShuffle permutation per epoch reused by A/B/C (dataset.py:330-347, 437-450). Default: each site's DataLoader has shuffle=True and draws its own permutation; even with a shared generator the three loaders draw sequentially, giving three different permutations. Val/test are never shuffled (shuffle only for split=='train')."
+    },
+    "zip_can_silently_truncate": {
+      "answer": "YES",
+      "evidence": "train.py:678 (_train_one_round_sites) and :769 (_evaluate_sites), plus every evaluator and attack, iterate zip(loaders['A'], loaders['B'], loaders['C']) with no length check. Pre-fix train: A 14,679 rows -> 229 batches; B 17,516 -> 273; C 17,533 -> 273. zip stops after 229, so each epoch silently drops 44 batches (~2,800 stays) at B and C. Pre-fix val: A 50 batches vs B/C 59. drop_last=True (dataset.py:453) applies to val/test too, so even aligned evaluation drops the last partial batch: test 3,235 -> 3,200 stays scored (35 dropped), val 3,221 -> 3,200 (21 dropped)."
+    }
+  },
+
+  "entry_points": [
+    {"file": "data_prep/psi_alignment.py", "role": "cohort alignment (data producer)", "status": "FAIL", "reason": "aligns subject_id only; produces no stay-level alignment"},
+    {"file": "data_prep/vertical_split.py", "role": "site CSV producer", "status": "PASS", "reason": "one row per stay with stay + subject_id (parse_subject_id from filename) + split; site stay populations differ by benchmark task by design (IHM >=48h, decomp, pheno). T02 confirmed consistent stay->subject mapping and no duplicate stays."},
+    {"file": "data_prep/dataset.py::VFLSiteDataset", "role": "per-site dataset", "status": "FAIL", "reason": "split + subject_id filter only (dataset.py:173-178)"},
+    {"file": "data_prep/dataset.py::build_site_loaders (default)", "role": "loader builder", "status": "FAIL", "reason": "align_stays=False by default; independent shuffle per site"},
+    {"file": "data_prep/dataset.py::build_site_loaders (align_stays=True)", "role": "loader builder", "status": "PASS", "reason": "sorted stay intersection, identical reindex at every site, one shared per-epoch permutation; does NOT verify stay->subject mapping or expose stay IDs per batch (T05/T07 gaps)"},
+    {"file": "train.py::run_training (own loader path, no prebuilt)", "role": "training core", "status": "FAIL", "reason": "train.py:422-427 builds loaders without align_stays; used by run_factorial_pcmu.py and any caller that passes no prebuilt_loaders. decomp pos_weight computed from all raw site-B train rows (train.py:410-413), not the aligned cohort (T09)."},
+    {"file": "train.py::__main__", "role": "CLI training", "status": "FAIL", "reason": "train.py:900-905 build_site_loaders without align_stays"},
+    {"file": "train.py::_train_one_round_sites / _evaluate_sites", "role": "train/eval loops", "status": "FAIL", "reason": "zip() over site loaders with no length or stay-ID assertion; correctness depends entirely on the loaders passed in"},
+
+    {"file": "experiments/run_exp1.py", "role": "E1 training", "status": "FAIL", "reason": "build_site_loaders(train/val) default (run_exp1.py:86-87)"},
+    {"file": "experiments/privacy_utility_curves.py", "role": "E4/E5 DP training", "status": "FAIL", "reason": "build_site_loaders default (:198-199)"},
+    {"file": "experiments/run_exp2.py", "role": "E2 training", "status": "FAIL", "reason": "build_site_loaders default (:115-116)"},
+    {"file": "experiments/run_exp3.py", "role": "E3 training", "status": "FAIL", "reason": "build_site_loaders default (:78-79)"},
+    {"file": "experiments/run_ablations.py", "role": "architecture ablations", "status": "FAIL", "reason": "build_site_loaders default (:114-115)"},
+    {"file": "experiments/ablations_dp.py", "role": "DP ablations + label inference", "status": "FAIL", "reason": "build_site_loaders default for training (:330-333) and attack extraction (:208-209)"},
+    {"file": "experiments/run_factorial_pcmu.py", "role": "PCMU factorial", "status": "FAIL", "reason": "run_training without prebuilt -> train.py own loader path (no alignment)"},
+    {"file": "experiments/validate_bound.py", "role": "E6 bound validation", "status": "FAIL", "reason": "unaligned loaders (:141), used only for sample_rate = 1/len(loader A) = 1/229, numerically the same as aligned; but it compares against label-inference results that are FAIL"},
+    {"file": "experiments/compute_pcmu.py", "role": "PCMU metric", "status": "PASS", "reason": "no loaders; computes from result CSVs (inputs come from FAIL runs)"},
+
+    {"file": "experiments/evaluate_test.py", "role": "test eval (VFL, local-only, centralized)", "status": "FAIL", "reason": "VFL path aligned only with --align_stays (default off). Local-only (per-site loop :168) and centralized (CentralizedDataset) branches are PASS."},
+    {"file": "experiments/evaluate_test_dp.py", "role": "DP test eval", "status": "FAIL", "reason": "--align_stays opt-in, default off"},
+    {"file": "experiments/evaluate_test_ablations_dp.py", "role": "DP ablation test eval", "status": "FAIL", "reason": "--align_stays opt-in, default off"},
+    {"file": "experiments/evaluate_exp2.py", "role": "E2 test eval", "status": "FAIL", "reason": "--align_stays opt-in, default off"},
+    {"file": "experiments/evaluate_exp3.py", "role": "E3 test eval", "status": "FAIL", "reason": "--align_stays opt-in, default off"},
+    {"file": "experiments/evaluate_ablations.py", "role": "ablation test eval", "status": "FAIL", "reason": "--align_stays opt-in, default off"},
+    {"file": "experiments/calibration_predictions.py", "role": "calibration / Brier", "status": "FAIL", "reason": "--align_stays opt-in, default off for VFL path; centralized/local paths PASS"},
+
+    {"file": "attacks/label_inference.py", "role": "label inference attack", "status": "FAIL", "reason": "build_site_loaders default (:230-231); zip over A/B/C (:113)"},
+    {"file": "attacks/embedding_mia.py", "role": "embedding membership inference", "status": "FAIL", "reason": "build_site_loaders default (:204-205); zip over A/B/C (:103)"},
+    {"file": "attacks/feature_reconstruction.py", "role": "feature reconstruction attack", "status": "PASS", "reason": "uses site A loader only (:313-314), so no cross-site correspondence needed; the attacked client was trained in a FAIL run, so results still need rerun"},
+
+    {"file": "baselines/centralized.py", "role": "centralized oracle", "status": "PASS", "reason": "explicit sorted stay intersection A∩B∩C (:111-119), single dataset"},
+    {"file": "baselines/local_only.py", "role": "local-only baselines", "status": "PASS", "reason": "single site, no cross-site correspondence; note cohort = all aligned-patient stays of that site (e.g. B 17,516 train), not the 14,679 common stays"},
+    {"file": "experiments/run_baselines.py", "role": "baseline runner", "status": "PASS", "reason": "delegates to local_only / centralized"},
+
+    {"file": "revision_scripts/run_prism_privacy_sweep.py", "role": "revision sweep (E1+E4/E5)", "status": "PASS", "reason": "align_stays=True, shared generator, fatal check of stays + shuffle order (:58-65), decomp weight from aligned rows"},
+    {"file": "revision_scripts/diagnose_seed42.py", "role": "seed-42 probes", "status": "PASS", "reason": "align_stays=True, shared generator; no alignment assertion (relies on builder)"},
+    {"file": "revision_scripts/evaluate_test_prism_privacy_sweep.py", "role": "revision test eval", "status": "PASS", "reason": "align_stays=True + assert identical stays (:71-72)"},
+    {"file": "revision_scripts/analyse_prism_privacy_sweep.py", "role": "statistics", "status": "PASS", "reason": "no loaders"},
+    {"file": "revision_scripts/diff_exp1_vs_privacy_curves.py", "role": "static diff", "status": "PASS", "reason": "no loaders"}
+  ],
+
+  "summary": {
+    "PASS": 12,
+    "FAIL": 23,
+    "UNKNOWN": 0,
+    "inputs_to_T05": [
+      "make stay alignment the default/only path in build_site_loaders and train.run_training",
+      "verify stay->subject mapping when aligning (not done today)",
+      "remove --align_stays opt-in from the 7 evaluators (always aligned)",
+      "align label_inference, embedding_mia, ablations_dp, validate_bound loaders",
+      "drop_last=True on val/test drops 35 test / 21 val stays: decide whether evaluation must cover every stay",
+      "decomp pos_weight in train.py computed from raw site-B rows (T09)"
+    ]
+  }
+}

@@ -237,7 +237,7 @@ class VFLSiteDataset(Dataset):
         else:
             y = torch.tensor(float(raw), dtype=torch.float32)
 
-        return x, mask, y
+        return StayBatch((x, mask, y), self.stays[idx])
 
     # ------------------------------------------------------------------
 
@@ -306,6 +306,22 @@ class VFLSiteDataset(Dataset):
 # Collate function
 # ---------------------------------------------------------------------------
 
+class StayBatch(tuple):
+    """(x, mask, y) tuple that also carries the ICU stay ID(s) it holds in `.stays`."""
+
+    def __new__(cls, items, stays=None):
+        obj = super().__new__(cls, items)
+        obj.stays = stays
+        return obj
+
+
+def check_same_stays(*batches) -> None:
+    """Fail fast unless every site's batch holds the same stays in the same order."""
+    stays = [getattr(b, "stays", None) for b in batches]
+    if any(s != stays[0] for s in stays[1:]):
+        raise RuntimeError("Site batches hold different ICU stays")
+
+
 def collate_fn(batch: list) -> tuple:
     """
     Stack pre-padded samples into a batch.
@@ -315,41 +331,61 @@ def collate_fn(batch: list) -> tuple:
 
     Returns
     -------
+    StayBatch of
     x    : Tensor (B, max_seq_len, n_features)
     mask : Tensor (B, max_seq_len)
     y    : Tensor (B,) or (B, 25)
+    with .stays = the B stay IDs in row order
     """
     xs, masks, ys = zip(*batch)
-    return (
-        torch.stack(xs),     # (B, T, F)
-        torch.stack(masks),  # (B, T)
-        torch.stack(ys),     # (B,) or (B, 25)
+    return StayBatch(
+        (
+            torch.stack(xs),     # (B, T, F)
+            torch.stack(masks),  # (B, T)
+            torch.stack(ys),     # (B,) or (B, 25)
+        ),
+        [sample.stays for sample in batch],
     )
 
 
-class _SharedShuffle(Sampler):
-    """Row order for one site loader; all sites of a split reuse the same permutation each epoch."""
+class SeededShuffle(Sampler):
+    """Train-split shuffle; every site holds the same seed, so each epoch all sites draw the same permutation."""
 
-    def __init__(self, n: int, generator: torch.Generator, shared: dict):
-        self.n, self.generator, self.shared = n, generator, shared
-        self._used = None
+    def __init__(self, n: int, seed: int):
+        self.n = n
+        self.set_seed(seed)
+
+    def set_seed(self, seed: int) -> None:
+        """Restart the permutation sequence (once per experiment seed)."""
+        self.generator = torch.Generator().manual_seed(seed)
 
     def __len__(self) -> int:
         return self.n
 
     def __iter__(self):
-        s, g = self.shared, self.generator
-        # New permutation once this site has used the current one, or after a reseed.
-        if self._used is s.get("perm") or not torch.equal(g.get_state(), s["state"]):
-            s["perm"]  = torch.randperm(self.n, generator=g).tolist()
-            s["state"] = g.get_state()
-        self._used = s["perm"]
-        return iter(s["perm"])
+        return iter(torch.randperm(self.n, generator=self.generator).tolist())
 
 
 # ---------------------------------------------------------------------------
 # Convenience builder — constructs all three site loaders at once
 # ---------------------------------------------------------------------------
+
+def align_stays(datasets: dict) -> None:
+    """Reindex every site to the sorted stays all sites share, so row i is the same ICU stay everywhere."""
+    for site_id, ds in datasets.items():
+        if len(set(ds.stays)) != len(ds.stays):
+            raise ValueError(f"Site {site_id}: duplicate stay rows")
+    common = sorted(set.intersection(*(set(ds.stays) for ds in datasets.values())))
+    for ds in datasets.values():
+        pos = {stay: i for i, stay in enumerate(ds.stays)}
+        idx = [pos[stay] for stay in common]
+        ds.subject_ids = [ds.subject_ids[i] for i in idx]
+        ds.labels      = ds.labels[idx]
+        ds.stays       = list(common)
+    subjects = [ds.subject_ids for ds in datasets.values()]
+    if any(s != subjects[0] for s in subjects[1:]):
+        raise ValueError("Same stay maps to different subject_id across sites")
+
 
 def build_site_loaders(
     root: Union[str, Path],
@@ -357,11 +393,14 @@ def build_site_loaders(
     batch_size: int = 32,
     num_workers: int = 0,
     max_seq_len: int = 48,
-    generator: "torch.Generator | None" = None,
-    align_stays: bool = False,
+    seed: int = 0,
 ) -> dict:
     """
     Build DataLoaders for all three sites for a given split.
+
+    Every site keeps only the stays all three sites have, in the same sorted
+    order, and the train split is shuffled with the same permutation at every
+    site, so row i of every batch is the same ICU stay at A, B and C.
 
     Parameters
     ----------
@@ -371,11 +410,8 @@ def build_site_loaders(
     batch_size  : samples per batch
     num_workers : DataLoader worker processes (0 = main process only)
     max_seq_len : sequence length passed to VFLSiteDataset
-    generator   : optional shared torch.Generator for the train-split shuffle
-                  (reproducible per seed). None = unchanged behaviour.
-    align_stays : keep only stays present at all three sites, in the same row
-                  order, and shuffle the sites together, so row i is the same
-                  ICU stay at every site. False = unchanged behaviour.
+    seed        : train-split shuffle seed; run_training resets it to the
+                  experiment seed at the start of every run.
 
     Returns
     -------
@@ -424,34 +460,17 @@ def build_site_loaders(
         for site_id, cfg in configs.items()
     }
 
-    shuffle = (split == "train")
-    shared  = None
-    if align_stays:
-        common = sorted(set.intersection(*(set(ds.stays) for ds in datasets.values())))
-        for ds in datasets.values():
-            pos = {stay: i for i, stay in enumerate(ds.stays)}
-            idx = [pos[stay] for stay in common]
-            ds.subject_ids = [ds.subject_ids[i] for i in idx]
-            ds.labels      = ds.labels[idx]
-            ds.stays       = common
-        if shuffle:
-            shared = {}
-            if generator is None:
-                generator = torch.Generator().manual_seed(
-                    int(torch.empty((), dtype=torch.int64).random_().item())
-                )
+    align_stays(datasets)
 
     loaders = {}
     for site_id, ds in datasets.items():
         loaders[site_id] = DataLoader(
             ds,
             batch_size  = batch_size,
-            shuffle     = shuffle and shared is None,
-            sampler     = _SharedShuffle(len(ds), generator, shared) if shared is not None else None,
+            sampler     = SeededShuffle(len(ds), seed) if split == "train" else None,
             collate_fn  = collate_fn,
             num_workers = num_workers,
             drop_last   = True,  # ensures all sites produce equal-sized batches for lockstep zip
-            generator   = generator,
         )
 
     return loaders

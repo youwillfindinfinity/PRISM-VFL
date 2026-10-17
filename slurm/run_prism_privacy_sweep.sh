@@ -37,13 +37,13 @@ if [ "$1" = "2roundtest" ]; then
 fi
 
 python -u revision_scripts/run_prism_privacy_sweep.py \
-    --splits_dir /home/asoare/vfl_mlt/data/vertical_splits \
+    --splits_dir data/vertical_splits \
     --output $OUT \
     --ckpt_dir $CKPT \
     --device cuda $EXTRA
 
 python -u revision_scripts/evaluate_test_prism_privacy_sweep.py \
-    --splits_dir /home/asoare/vfl_mlt/data/vertical_splits \
+    --splits_dir data/vertical_splits \
     --input $OUT \
     --ckpt_dir $CKPT \
     --output ${OUT%.csv}_test.csv \

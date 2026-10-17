@@ -342,6 +342,10 @@ class TestCouplingMatrix:
 
 class TestTrainPrivacyConfig:
 
+    @pytest.fixture(autouse=True)
+    def _ckpt_dir(self, tmp_path):
+        self.ckpt_dir = str(tmp_path)  # never write into the repo's checkpoints/
+
     def _run(self, privacy_config):
         from train import run_training, TrainConfig
         cfg = TrainConfig(
@@ -353,6 +357,7 @@ class TestTrainPrivacyConfig:
             patience=0,
             use_fedavg=False,
             privacy_config=privacy_config,
+            ckpt_dir=self.ckpt_dir,
         )
         return run_training(cfg)
 

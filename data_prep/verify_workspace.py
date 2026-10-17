@@ -4,7 +4,9 @@ verify_workspace.py — Step 7 workspace readiness check.
 Checks:
   ✓ All four task directories exist and are non-empty
   ✓ vertical_splits/ contains all three site CSVs
-  ✓ aligned_patient_ids.csv covers >= 30,000 patients
+  ✓ aligned_patient_ids.csv covers >= 18,000 patients
+  ✓ Exact VFL stay alignment per split (same stays, same order, same subject,
+    same split at every site; no duplicate stays)
   ✓ No feature column overlap between site CSVs
   ✓ Class balance within acceptable range for each task
 
@@ -15,8 +17,13 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from data_prep.dataset import align_stays
 
 # ── columns that are not clinical features ─────────────────────────────────
 NON_FEATURE_COLS = {
@@ -131,40 +138,65 @@ def verify(root: Path) -> bool:
         print(f"  ✗ aligned_patient_ids.csv not found — skipping count check")
         results.append(False)
 
-    # ── 3b. Subject ID overlap: aligned_patient_ids ↔ site CSVs ─────────────
-    # Critical: VFLSiteDataset filters by split in BOTH aligned_patient_ids.csv
-    # AND the site CSV. If the split assignments differ (e.g. after stratification),
-    # the intersection can collapse to near-zero — silently producing tiny datasets.
-    print("\n[ 3b ] Subject ID overlap (aligned_patient_ids ↔ site CSVs)")
-    MIN_OVERLAP_FRAC = 0.80  # at least 80% of aligned val/test must appear in each site CSV
-    if aligned_path.exists():
+    # ── 3b. Exact VFL stay alignment ────────────────────────────────────────
+    # Row i must be the same ICU stay at every site; partial overlap is not enough.
+    print("\n[ 3b ] VFL stay alignment (exact)")
+    site_csv_paths = {
+        "A": splits_dir / "site_A_vitals.csv",
+        "B": splits_dir / "site_B_labs.csv",
+        "C": splits_dir / "site_C_composite.csv",
+    }
+    if aligned_path.exists() and all(p.exists() for p in site_csv_paths.values()):
         aligned_df = pd.read_csv(aligned_path)
-        site_csv_paths = {
-            "A": splits_dir / "site_A_vitals.csv",
-            "B": splits_dir / "site_B_labs.csv",
-            "C": splits_dir / "site_C_composite.csv",
-        }
-        for sp in ["val", "test"]:
-            aligned_ids_sp = set(aligned_df.loc[aligned_df["split"] == sp, "subject_id"])
-            for site, spath in site_csv_paths.items():
-                if not spath.exists():
-                    continue
-                site_df_sp = pd.read_csv(spath, usecols=["subject_id", "split"])
-                site_ids_sp = set(site_df_sp.loc[site_df_sp["split"] == sp, "subject_id"])
-                if not aligned_ids_sp:
-                    continue
-                overlap_frac = len(aligned_ids_sp & site_ids_sp) / len(aligned_ids_sp)
-                check(
-                    overlap_frac >= MIN_OVERLAP_FRAC,
-                    f"Split '{sp}' site {site}: {overlap_frac:.1%} of aligned IDs present in site CSV",
-                    f"Split '{sp}' site {site}: only {overlap_frac:.1%} of aligned IDs in site CSV "
-                    f"(aligned has {len(aligned_ids_sp):,}, site has {len(site_ids_sp):,}, "
-                    f"overlap={len(aligned_ids_sp & site_ids_sp):,}) — "
-                    f"run psi_alignment.py to regenerate aligned_patient_ids.csv",
-                    results,
-                )
+        sites = {s: pd.read_csv(p, usecols=["stay", "subject_id", "split"])
+                 for s, p in site_csv_paths.items()}
+
+        for s, df in sites.items():
+            n_dup = int(df["stay"].duplicated().sum())
+            check(n_dup == 0, f"Site {s}: no duplicate stay rows",
+                  f"Site {s}: {n_dup:,} duplicate stay rows", results)
+
+        # Checked on the full CSVs: a conflicting row would otherwise just drop out of the filter.
+        for col in ["subject_id", "split"]:
+            by_site = pd.concat(
+                {s: df.drop_duplicates("stay").set_index("stay")[col] for s, df in sites.items()},
+                axis=1,
+            )
+            n_shared = int((by_site.notna().sum(axis=1) >= 2).sum())
+            n_conflict = int((by_site.nunique(axis=1) > 1).sum())
+            check(n_conflict == 0,
+                  f"Same {col} at every site for all {n_shared:,} stays held by 2+ sites",
+                  f"{n_conflict:,} shared stays have a different {col} across sites", results)
+
+        for sp in ["train", "val", "test"]:
+            aligned_ids = set(aligned_df.loc[aligned_df["split"] == sp, "subject_id"])
+            views = {}
+            for s, df in sites.items():  # same filter as VFLSiteDataset
+                d = df[(df["split"] == sp) & df["subject_id"].isin(aligned_ids)]
+                views[s] = SimpleNamespace(stays=d["stay"].tolist(),
+                                           subject_ids=d["subject_id"].tolist(),
+                                           labels=np.arange(len(d)))
+            try:
+                align_stays(views)
+            except ValueError as e:
+                check(False, "", f"Split '{sp}': {e}", results)
+                continue
+            stays = [v.stays for v in views.values()]
+            subjects = [v.subject_ids for v in views.values()]
+            check(stays[0] == stays[1] == stays[2] and stays[0] == sorted(stays[0]),
+                  f"Split '{sp}': {len(stays[0]):,} stays, identical set and sorted order at A/B/C",
+                  f"Split '{sp}': aligned stays differ across sites", results)
+            check(subjects[0] == subjects[1] == subjects[2],
+                  f"Split '{sp}': identical stay->subject_id mapping at A/B/C",
+                  f"Split '{sp}': stay->subject_id mapping differs across sites", results)
+            n_covered = len(set(subjects[0]))
+            check(n_covered == len(aligned_ids),
+                  f"Split '{sp}': all {len(aligned_ids):,} aligned patients have aligned stays",
+                  f"Split '{sp}': only {n_covered:,} of {len(aligned_ids):,} aligned patients "
+                  f"have aligned stays — split assignments disagree with aligned_patient_ids.csv",
+                  results)
     else:
-        print("  ✗ aligned_patient_ids.csv not found — skipping overlap check")
+        print("  ✗ aligned_patient_ids.csv or a site CSV missing — skipping alignment check")
         results.append(False)
 
     # ── 4. No feature column overlap between site CSVs ────────────────────

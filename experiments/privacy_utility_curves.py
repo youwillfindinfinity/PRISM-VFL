@@ -34,9 +34,9 @@ import math
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, CLIPPING_NORM as MAX_GRAD_NORM, DELTA, EPSILON_LEVELS, MAX_ROUNDS, PATIENCE, SEEDS
 
 from train import run_training, TrainConfig
 from data_prep.dataset import build_site_loaders
@@ -45,12 +45,8 @@ from data_prep.dataset import build_site_loaders
 # Constants
 # ---------------------------------------------------------------------------
 
-SEEDS = [42, 123, 7]
-DELTA = 1e-5
-MAX_GRAD_NORM = 1.0
 
 # Uniform ε sweep — float('inf') = no DP baseline
-EPSILON_LEVELS = [float("inf"), 10.0, 5.0, 2.0, 1.0, 0.5]
 
 # Stratified allocation at ε_total=5: tighter budget for clinical-risk hierarchy.
 # ε_IHM=2, ε_Decomp=2, ε_Pheno=1  (sum = 5, composition bound)
@@ -145,14 +141,14 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--splits_dir",    default="data/vertical_splits")
-    parser.add_argument("--n_rounds",      type=int, default=100)
-    parser.add_argument("--batch_size",    type=int, default=64)
+    parser.add_argument("--n_rounds",      type=int, default=MAX_ROUNDS)
+    parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--device",        default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     parser.add_argument("--output",        default="results/privacy_utility.csv")
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
-    parser.add_argument("--patience",      type=int, default=0,
-                        help="Early stopping patience (0 = disabled for DP runs to ensure full sweep)")
+    parser.add_argument("--patience",      type=int, default=PATIENCE,
+                        help="Early stopping patience in rounds (manuscript §2.4.3; 0 = disabled)")
     parser.add_argument("--epsilon_levels", default=None,
                         help="Comma-separated ε levels to run, e.g. 'inf' or '5.0' or '1.0,0.5'. "
                              "Default: all levels. Use this to parallelise across Snellius jobs.")
@@ -183,21 +179,14 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ---- Data ----
-    decomp_pos_weight = 1.0
     prebuilt = None
 
     if not args.use_synthetic:
         print("[privacy_curves] Pre-loading data loaders...")
         project_root = Path(args.splits_dir).parents[1]
-        site_b_csv   = Path(args.splits_dir) / "site_B_labs.csv"
-        _b = pd.read_csv(site_b_csv, usecols=["y_decomp", "split"])
-        pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-        decomp_pos_weight = (1.0 - pos_rate) / pos_rate
-        print(f"[privacy_curves] decomp pos_weight={decomp_pos_weight:.1f}")
         prebuilt = {
             "train": build_site_loaders(project_root, "train", args.batch_size, num_workers=args.num_workers),
             "val":   build_site_loaders(project_root, "val",   args.batch_size, num_workers=args.num_workers),
-            "decomp_pos_weight": decomp_pos_weight,
         }
 
     # ---- Sample rate for σ computation ----
@@ -249,9 +238,7 @@ def main() -> None:
         use_synthetic=args.use_synthetic,
         n_synthetic=args.n_synthetic,
         patience=args.patience,
-        decomp_pos_weight=decomp_pos_weight,
         task_weights={"ihm": 1.0, "decomp": 1.0, "pheno": 1.0},
-        uncertainty_weighting=True,
         eval_every=1,
         grad_sim_every=5,
     )

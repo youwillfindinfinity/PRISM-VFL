@@ -1,0 +1,83 @@
+{
+  "task": "T10_CHECKPOINT_POLICY",
+  "generated": "2026-10-17",
+  "manuscript_policy": {
+    "source": "§2.4.3 Federated Training Protocol (manuscript p.17-18); Table 3 'Val. AUC plateau'",
+    "text": "After each communication round, mean validation AUC across tasks was computed; training was halted when this value did not improve over 15 consecutive rounds (patience = 15). A maximum of 100 rounds was enforced as a hard ceiling. The model state from the best validation round was retained for evaluation.",
+    "metric": "mean validation AUROC across tasks",
+    "patience": 15,
+    "max_rounds": 100,
+    "retained_state": "best validation round"
+  },
+
+  "before_fix": {
+    "code_state": "HEAD 98c896a (revision-1); manuscript results produced at 942a1bc",
+    "checkpoint_filename_pattern": {
+      "best_{model_name}_seed{seed}.pt": "saved on best validation IHM AUROC (train.py), every run",
+      "bestmean_{model_name}_seed{seed}.pt": "saved on best mean validation AUROC over active tasks (added in 98c896a, revision only)"
+    },
+    "metric_used_for_selection": "IHM validation AUROC for the checkpoint every manuscript evaluator loaded; early stopping on mean AUROC (at 942a1bc: precision-weighted mean when uncertainty weighting was on, see P0 Decision 4)",
+    "round_selected": "best-IHM round; can differ from the logged best_round (best mean-AUROC round)",
+    "evaluator_loading_same_policy": false,
+    "deviations": [
+      "All manuscript evaluators and attacks (evaluate_test, evaluate_test_dp, evaluate_test_ablations_dp, evaluate_exp2, evaluate_exp3, evaluate_ablations, calibration_predictions, ablations_dp label inference, label_inference, embedding_mia, feature_reconstruction) loaded best_* = best IHM AUROC, not best mean AUROC.",
+      "privacy_utility_curves.py default patience=0 (no early stopping, always 100 rounds) vs manuscript patience 15.",
+      "run_exp2.py saved exp3_{config} but evaluate_exp2.py loaded exp2_{config}; run_exp3.py saved exp4_sites{n} but evaluate_exp3.py loaded exp3_sites{n}: evaluators could not find the training checkpoints under current code.",
+      "feature_reconstruction.py built DP names without the _seed{N} suffix that training writes, so the canonical file never matched and a glob fallback loaded any *seed{N}*.pt (eps-matching or most recent) - possibly the wrong model."
+    ]
+  },
+
+  "after_fix": {
+    "checkpoint_filename_pattern": "bestmean_{model_name}_seed{seed}.pt (the only checkpoint run_training saves)",
+    "metric_used_for_selection": "plain mean validation AUROC over the tasks with nonzero weight (single-task runs: that task's AUROC); identical for equal and uncertainty weighting",
+    "round_selected": "best_round column in every results row = round of the saved checkpoint (checkpoint stores 'round'); revision evaluator additionally asserts checkpoint round == best_round",
+    "patience": "15 in every VFL training script (privacy_utility_curves.py default changed 0 -> 15)",
+    "max_rounds": 100,
+    "evaluator_loading_same_policy": true,
+    "evaluators_and_attacks_loading_bestmean": [
+      "experiments/evaluate_test.py", "experiments/evaluate_test_dp.py",
+      "experiments/evaluate_test_ablations_dp.py", "experiments/evaluate_exp2.py",
+      "experiments/evaluate_exp3.py", "experiments/evaluate_ablations.py",
+      "experiments/calibration_predictions.py", "experiments/ablations_dp.py",
+      "attacks/label_inference.py", "attacks/embedding_mia.py",
+      "attacks/feature_reconstruction.py", "revision_scripts/evaluate_test_prism_privacy_sweep.py"
+    ],
+    "files_changed": [
+      "train.py (removed best-IHM checkpoint; single bestmean checkpoint)",
+      "experiments/privacy_utility_curves.py (patience default 15)",
+      "experiments/run_exp2.py (model_name exp2_{config})",
+      "experiments/run_exp3.py (model_name exp3_sites{n})",
+      "attacks/feature_reconstruction.py (correct DP name, glob fallback removed)",
+      "10 evaluator/attack files (best_ -> bestmean_)"
+    ],
+    "verification": {
+      "synthetic_end_to_end": "run_training (6 rounds) wrote exactly one file bestmean_VFL-MTL_seed42.pt; its stored round == logged best_round == argmax of mean val AUROC; evaluate_test.eval_vfl_mtl loaded it",
+      "tests": "pytest tests/ and smoke_tests/_regression_check.py pass; no files written outside smoke_tests/"
+    }
+  },
+
+  "not_changed": {
+    "train.py main() CLI": "standalone README entry point, not used by any manuscript experiment or SLURM job; keeps best_seed{N}.pt on IHM AUROC with no early stopping",
+    "baselines": {
+      "centralized.py": "selects on mean of IHM/Decomp/Pheno val AUROC (matches the rule); best_centralized_seed{N}.pt; patience changed 10 -> 15 (see decision)",
+      "local_only.py": "selects on its own task's val AUROC (= mean over its single task); best_local_{site}_seed{N}.pt; patience changed 10 -> 15 (see decision)"
+    }
+  },
+
+  "consequences_for_other_tasks": {
+    "T12": "With patience 15 a DP run can stop before 100 rounds, so epsilon spent can be below the target epsilon used to calibrate sigma; report epsilon actually spent (logged per round) alongside the target.",
+    "T17": "Manuscript results were evaluated on best-IHM checkpoints; corrected results use the best mean-AUC checkpoint the Methods already describe."
+  },
+
+  "status": "PASS",
+  "decision": {
+    "question": "Baselines (centralized, local-only) used patience 10; VFL uses 15. Align baselines to 15?",
+    "options": {
+      "A": "Set baseline patience to 15 (same stopping rule for every model compared in the paper).",
+      "B": "Keep 10 and state it in the Methods/Table 3."
+    },
+    "chosen": "A",
+    "decided_by": "author (2026-10-17)",
+    "files_changed": ["baselines/local_only.py (patience default 15)", "baselines/centralized.py (patience default 15)"]
+  }
+}

@@ -19,8 +19,8 @@ cd "$SLURM_SUBMIT_DIR"
 pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/null
 
 python experiments/validate_bound.py \
-    --results_dir results \
-    --output results/bound_validation.csv \
-    --device cuda
+    --label_inference_csv results/label_inference.csv \
+    --splits_dir data/vertical_splits \
+    --output results/bound_validation.csv
 
 echo "[validate_bound] Done. Results in results/bound_validation.csv"

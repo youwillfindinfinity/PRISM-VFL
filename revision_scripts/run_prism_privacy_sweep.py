@@ -29,6 +29,7 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, EPSILON_LEVELS, MAX_ROUNDS, PATIENCE, SWEEP_SEEDS as SEEDS
 from train import run_training, TrainConfig
 from data_prep.dataset import build_site_loaders
 from experiments.run_exp1 import CONFIGS as ST_CONFIGS
@@ -36,8 +37,6 @@ from experiments.privacy_utility_curves import (
     _compute_sigma, _build_uniform_privacy_config, _epsilon_label,
 )
 
-SEEDS = [7, 42, 123, 0, 1, 2, 3, 4, 5, 6]
-EPSILON_LEVELS = [float("inf"), 10.0, 5.0, 2.0, 1.0, 0.5]
 ABLATION_EPS = [float("inf"), 5.0]   # uncertainty-weighting side experiment only here
 
 # Fixed upfront (not derived from the first row) so DP-only columns from later
@@ -55,22 +54,12 @@ FIELDNAMES = [
 ]
 
 
-def _check_row_alignment(prebuilt: dict) -> None:
-    """Stop before training unless every site sees the same stay at the same row."""
-    for split in ("train", "val"):
-        stays = [prebuilt[split][s].dataset.stays for s in "ABC"]
-        assert stays[0] == stays[1] == stays[2], f"{split}: stays differ across sites"
-    order = [list(prebuilt["train"][s].sampler) for s in "ABC"]
-    assert order[0] == order[1] == order[2], "train: shuffle order differs across sites"
-    print(f"[check] row alignment across sites: OK ({len(order[0])} train stays)")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--splits_dir",  default="data/vertical_splits")
-    parser.add_argument("--n_rounds",    type=int, default=100)
-    parser.add_argument("--batch_size",  type=int, default=64)
-    parser.add_argument("--patience",    type=int, default=15)
+    parser.add_argument("--n_rounds",    type=int, default=MAX_ROUNDS)
+    parser.add_argument("--batch_size",  type=int, default=BATCH_SIZE)
+    parser.add_argument("--patience",    type=int, default=PATIENCE)
     parser.add_argument("--device",      default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--output",      default="results_revision/prism_privacy_sweep.csv")
     parser.add_argument("--ckpt_dir",    default="checkpoints_revision",
@@ -119,22 +108,13 @@ def main() -> None:
             continue
         seed_rows: list[dict] = []
         print(f"\n########## seed={seed} ##########")
-        g = torch.Generator().manual_seed(seed)
         if args.use_synthetic:
             prebuilt = None
         else:
             prebuilt = {
-                "train": build_site_loaders(project_root, "train", args.batch_size,
-                                            generator=g, align_stays=True),
-                "val":   build_site_loaders(project_root, "val",   args.batch_size,
-                                            generator=g, align_stays=True),
+                "train": build_site_loaders(project_root, "train", args.batch_size),
+                "val":   build_site_loaders(project_root, "val",   args.batch_size),
             }
-            _check_row_alignment(prebuilt)
-            # Class weight from the rows actually trained on (after alignment).
-            pos_rate = float(prebuilt["train"]["B"].dataset.labels.mean())
-            prebuilt["decomp_pos_weight"] = (1.0 - pos_rate) / pos_rate
-            print(f"[sweep] decomp pos_weight={prebuilt['decomp_pos_weight']:.1f} "
-                  f"(pos_rate={pos_rate:.3%})")
             sample_rate = 1.0 / max(len(prebuilt["train"]["A"]), 1)
 
         def _run(model_name, arm, eps, weighting, uncertainty_weighting, task_weights):
@@ -146,7 +126,6 @@ def main() -> None:
                 **base_kwargs,
             )
             print(f"=== {model_name} | eps={_epsilon_label(eps)} | seed={seed} ===")
-            g.manual_seed(seed)  # every arm of this seed sees the same batch order
             rows = run_training(cfg, prebuilt_loaders=prebuilt)
             for r in rows:
                 r.update(arm=arm, weighting=weighting, epsilon_level=_epsilon_label(eps), seed=seed)
@@ -169,7 +148,7 @@ def main() -> None:
             if st_name == "VFL-MTL":
                 continue
             seed_rows += _run(f"{st_name}-seed{seed}", st_name, float("inf"), "n/a",
-                               st_cfg.get("uncertainty_weighting", False), st_cfg["task_weights"])
+                               False, st_cfg["task_weights"])
 
         # Write this seed's rows immediately — a crash later only loses the
         # in-progress seed, not the whole run.

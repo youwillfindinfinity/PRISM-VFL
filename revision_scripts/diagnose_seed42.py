@@ -2,7 +2,7 @@
 revision_scripts/diagnose_seed42.py — seed-42 training-instability probes.
 
 Five PRISM runs at seed 42, one factor changed per probe, everything else (data
-order, architecture, weighting) held fixed via a freshly-seeded generator per run:
+order, architecture, weighting) held fixed; run_training reseeds the batch order per run:
   baseline        - no change
   init_from_123   - encoder+server weights start from a seed-123 initialisation
   grad_balance    - cut-layer embedding gradients rescaled to unit norm
@@ -26,6 +26,7 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, MAX_ROUNDS, PATIENCE
 from train import run_training, TrainConfig
 from data_prep.dataset import build_site_loaders
 
@@ -47,21 +48,17 @@ FIELDNAMES = [
 def _build_prebuilt(args):
     if args.use_synthetic:
         return None
-    g = torch.Generator().manual_seed(SEED)
     project_root = Path(args.splits_dir).parents[1]
-    train = build_site_loaders(project_root, "train", args.batch_size, generator=g, align_stays=True)
-    val   = build_site_loaders(project_root, "val",   args.batch_size, generator=g, align_stays=True)
-    # Class weight from the rows actually trained on (after alignment).
-    pos_rate = float(train["B"].dataset.labels.mean())
-    return {"train": train, "val": val, "decomp_pos_weight": (1.0 - pos_rate) / pos_rate}
+    return {"train": build_site_loaders(project_root, "train", args.batch_size),
+            "val":   build_site_loaders(project_root, "val",   args.batch_size)}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--splits_dir",  default="data/vertical_splits")
-    parser.add_argument("--n_rounds",    type=int, default=100)
-    parser.add_argument("--batch_size",  type=int, default=64)
-    parser.add_argument("--patience",    type=int, default=15)
+    parser.add_argument("--n_rounds",    type=int, default=MAX_ROUNDS)
+    parser.add_argument("--batch_size",  type=int, default=BATCH_SIZE)
+    parser.add_argument("--patience",    type=int, default=PATIENCE)
     parser.add_argument("--device",      default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--output",      default="results_revision/seed42_probes.csv")
     parser.add_argument("--ckpt_dir",    default="checkpoints_revision")
@@ -90,8 +87,9 @@ def main() -> None:
         seed=INIT_DONOR_SEED, model_name="probe-init-donor",
         save_init_checkpoint=True, **donor_kwargs,
     )
+    prebuilt = _build_prebuilt(args)
     print("=== building seed-123 init donor ===")
-    run_training(donor_cfg, prebuilt_loaders=_build_prebuilt(args))
+    run_training(donor_cfg, prebuilt_loaders=prebuilt)
     init_donor_path = f"{args.ckpt_dir}/init_probe-init-donor_seed{INIT_DONOR_SEED}.pt"
 
     out_path = Path(args.output)
@@ -114,7 +112,7 @@ def main() -> None:
 
         cfg = TrainConfig(seed=SEED, model_name=f"probe-{probe}", **probe_kwargs)
         print(f"\n=== probe={probe} ===")
-        rows = run_training(cfg, prebuilt_loaders=_build_prebuilt(args))
+        rows = run_training(cfg, prebuilt_loaders=prebuilt)
         for r in rows:
             r["probe"] = probe
 

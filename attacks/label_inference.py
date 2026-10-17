@@ -45,17 +45,18 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import label_binarize
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, EPSILON_LEVELS as CONFIG_EPSILON_LEVELS, SEEDS
 
 from fl.client import VFLClient
 from fl.server import VFLServer
+from data_prep.dataset import check_same_stays
 from train import make_synthetic_loaders
 
 # ---------------------------------------------------------------------------
 # Constants matching privacy_utility_curves.py
 # ---------------------------------------------------------------------------
 
-SEEDS         = [42, 123, 7]
-EPSILON_LEVELS = ["inf", "10.0", "5.0", "2.0", "1.0", "0.5"]
+EPSILON_LEVELS = [str(e) for e in CONFIG_EPSILON_LEVELS]
 EMBED_DIM     = 64
 SITE_INPUT_DIMS = {"A": 7, "B": 4, "C": 3}
 
@@ -66,12 +67,12 @@ SITE_INPUT_DIMS = {"A": 7, "B": 4, "C": 3}
 
 def _ckpt_path(ckpt_dir: str, eps_label: str, mode: str, seed: int) -> Path:
     if str(eps_label) == "inf":
-        return Path(ckpt_dir) / f"best_VFL-MTL_seed{seed}.pt"
+        return Path(ckpt_dir) / f"bestmean_VFL-MTL_seed{seed}.pt"
     if mode == "stratified":
         model_name = f"DP-stratified-eps5-seed{seed}"
     else:
         model_name = f"DP-uniform-eps{eps_label}-seed{seed}"
-    return Path(ckpt_dir) / f"best_{model_name}_seed{seed}.pt"
+    return Path(ckpt_dir) / f"bestmean_{model_name}_seed{seed}.pt"
 
 
 def _build_clients_and_server(device: torch.device) -> tuple[dict, VFLServer]:
@@ -111,6 +112,7 @@ def _extract_embeddings(
     label_lists: dict[str, list] = {"ihm": [], "pheno": []}
 
     for batch_A, batch_B, batch_C in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(batch_A, batch_B, batch_C)
         x_A, mask_A, y_ihm   = batch_A
         x_B, mask_B, _       = batch_B
         x_C, mask_C, y_pheno = batch_C
@@ -256,7 +258,7 @@ def main() -> None:
     parser.add_argument("--n_synthetic",   type=int, default=256)
     parser.add_argument("--n_rounds",      type=int, default=50,
                         help="Used only for checkpoint path reconstruction")
-    parser.add_argument("--batch_size",    type=int, default=64)
+    parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--max_seq_len",   type=int, default=48)
     parser.add_argument("--split",         default="test", choices=["val", "test"],
                         help="Which held-out split to evaluate the probe on.")

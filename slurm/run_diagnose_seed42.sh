@@ -31,7 +31,7 @@ if [ "$1" = "2roundtest" ]; then
 fi
 
 python -u revision_scripts/diagnose_seed42.py \
-    --splits_dir /home/asoare/vfl_mlt/data/vertical_splits \
+    --splits_dir data/vertical_splits \
     --output $OUT \
     --ckpt_dir $CKPT \
     --device cuda $EXTRA

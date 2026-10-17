@@ -50,16 +50,15 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, CLIPPING_NORM as MAX_GRAD_NORM, DELTA, MAX_ROUNDS, SEEDS
 
+from data_prep.dataset import build_site_loaders
 from train import run_training, TrainConfig, make_synthetic_loaders
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-SEEDS        = [42, 123, 7]
-DELTA        = 1e-5
-MAX_GRAD_NORM = 1.0
 CONV_THRESHOLD = 0.90   # fraction of per-run max AUC; replaced by locked threshold in Phase 3
 
 EMBED_DIMS   = [32, 64, 128]
@@ -151,6 +150,7 @@ def run_cell(
     seed: int,
     args: argparse.Namespace,
     sample_rate: float,
+    prebuilt: dict | None,
 ) -> tuple[dict, list[dict]]:
     """
     Run one factorial cell. Returns (summary_row, per_round_rows).
@@ -175,11 +175,11 @@ def run_cell(
         embed_dim=embed_dim,
         splits_dir=args.splits_dir,
         task_weights=task_weights,
-        uncertainty_weighting=(task_count > 1),
         privacy_config=privacy_config,
         use_synthetic=args.use_synthetic,
         batch_size=args.batch_size,
         grad_sim_every=1,
+        ckpt_dir=args.ckpt_dir,
     )
 
     label = (
@@ -188,7 +188,7 @@ def run_cell(
     )
     print(f"[phase2] {label}")
 
-    results = run_training(cfg, None)  # run_training builds loaders from cfg.splits_dir
+    results = run_training(cfg, prebuilt)
 
     # Per-round rows
     auc_key = _primary_auc_key(task_weights)
@@ -233,10 +233,10 @@ def run_cell(
 def main() -> None:
     parser = argparse.ArgumentParser(description="PCMU Phase 2 full factorial")
     parser.add_argument("--splits_dir",   default="data/vertical_splits")
-    parser.add_argument("--n_rounds",     type=int, default=100)
+    parser.add_argument("--n_rounds",     type=int, default=MAX_ROUNDS)
     parser.add_argument("--device",       default="cpu")
     parser.add_argument("--use_synthetic", action="store_true")
-    parser.add_argument("--batch_size",   type=int, default=256)
+    parser.add_argument("--batch_size",   type=int, default=BATCH_SIZE)
     # Allow targeting a sub-grid for parallelism, e.g. --embed_dim 32 --eps 5
     parser.add_argument("--embed_dim",    type=int, default=None,
                         help="Run only this embed_dim (default: all)")
@@ -250,10 +250,14 @@ def main() -> None:
                         help="Override rounds CSV path (default: results/phase2_factorial_rounds.csv)")
     parser.add_argument("--skip_existing", action="store_true",
                         help="Skip cells already present in the summary CSV (resume mode)")
+    parser.add_argument("--ckpt_dir",    default="checkpoints")
     args = parser.parse_args()
 
-    out_dir = Path(__file__).parent.parent / "results"
-    out_dir.mkdir(exist_ok=True)
+    # Synthetic runs never write to the real results/ or checkpoints/.
+    out_dir = Path(__file__).parent.parent / ("smoke_tests/revision1" if args.use_synthetic else "results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if args.use_synthetic and args.ckpt_dir == parser.get_default("ckpt_dir"):
+        args.ckpt_dir = str(out_dir / "checkpoints")
     summary_path = Path(args.out_summary) if args.out_summary else out_dir / "phase2_factorial.csv"
     rounds_path  = Path(args.out_rounds)  if args.out_rounds  else out_dir / "phase2_factorial_rounds.csv"
 
@@ -279,7 +283,18 @@ def main() -> None:
         except _pd.errors.EmptyDataError:
             print(f"[phase2] skip_existing: CSV exists but is empty, starting fresh")
 
-    sample_rate = args.batch_size / 10000.0  # conservative estimate for sigma pre-computation
+    # sigma is calibrated with the same q the accountant uses: 1 / train batches per round.
+    if args.use_synthetic:
+        prebuilt = None
+        sample_rate = 1.0 / max(1, TrainConfig.n_synthetic // args.batch_size)
+    else:
+        project_root = Path(args.splits_dir).parents[1]
+        prebuilt = {
+            "train": build_site_loaders(project_root, "train", args.batch_size),
+            "val":   build_site_loaders(project_root, "val",   args.batch_size),
+        }
+        sample_rate = 1.0 / len(prebuilt["train"]["A"])
+    print(f"[phase2] sample_rate={sample_rate:.5f}  n_rounds={args.n_rounds}")
 
     # Open CSV writers (append-safe: check if file already exists)
     write_summary_header = not summary_path.exists()
@@ -307,6 +322,7 @@ def main() -> None:
                 seed=seed,
                 args=args,
                 sample_rate=sample_rate,
+                prebuilt=prebuilt,
             )
             sw.writerow(summary_row)
             sf.flush()

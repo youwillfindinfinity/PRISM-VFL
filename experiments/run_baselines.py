@@ -46,11 +46,11 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, SEEDS
 
 from baselines.local_only import train_local
 from baselines.centralized import train_centralized
 
-SEEDS = [42, 123, 7]
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ def main():
     )
     p.add_argument("--root",         default=".",      help="Project root")
     p.add_argument("--n_epochs",     type=int, default=50)
-    p.add_argument("--batch_size",   type=int, default=64)
+    p.add_argument("--batch_size",   type=int, default=BATCH_SIZE)
     p.add_argument("--use_synthetic",action="store_true",
                    help="Use synthetic data (smoke test, no MIMIC required)")
     p.add_argument("--skip_rerun",   action="store_true",

@@ -25,7 +25,6 @@ for model_name, model_cfg in EXP1_CONFIGS.items():
 print("== privacy_utility_curves.py DP config ==")
 cfg = TrainConfig(n_rounds=3, seed=42, use_synthetic=True, model_name="DP-smoke",
                    ckpt_dir=CKPT, task_weights={"ihm": 1.0, "decomp": 1.0, "pheno": 1.0},
-                   uncertainty_weighting=True,
                    privacy_config=_build_uniform_privacy_config(1.0))
 rows = run_training(cfg)
 assert rows and "epsilon_ihm" in rows[-1] and "grad_norm_ihm" in rows[-1]

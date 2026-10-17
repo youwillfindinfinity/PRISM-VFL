@@ -31,6 +31,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, LEARNING_RATE, PATIENCE
 
 from data_prep.dataset import (
     VFLSiteDataset, collate_fn,
@@ -162,7 +163,7 @@ def _weighted_bce(pred: torch.Tensor, target: torch.Tensor, pos_weight: float) -
 def train_centralized(root: str, n_epochs: int, lr: float, batch_size: int,
                       seed: int, use_synthetic: bool, num_workers: int = 0,
                       hidden_dim: int = 128, prebuilt_loaders: dict = None,
-                      patience: int = 10, ckpt_dir: str | None = None,
+                      patience: int = 15, ckpt_dir: str | None = None,
                       decomp_pos_weight: float = 0.0) -> list[dict]:
     torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -276,13 +277,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--root",          default=".")
     p.add_argument("--n_epochs",      type=int,   default=50)
-    p.add_argument("--lr",            type=float, default=1e-3)
-    p.add_argument("--batch_size",    type=int,   default=64)
+    p.add_argument("--lr",            type=float, default=LEARNING_RATE)
+    p.add_argument("--batch_size",    type=int,   default=BATCH_SIZE)
     p.add_argument("--seeds",         type=int,   nargs="+", default=[42, 123, 7])
     p.add_argument("--num_workers",   type=int,   default=0)
     p.add_argument("--output",        default="results/centralized.csv")
     p.add_argument("--use_synthetic", action="store_true")
-    p.add_argument("--patience",      type=int,   default=10)
+    p.add_argument("--patience",      type=int,   default=PATIENCE)
     p.add_argument("--ckpt_dir",      default="checkpoints")
     args = p.parse_args()
 

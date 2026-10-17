@@ -6,11 +6,11 @@ that were trained by ablations_dp.py (Abl 2 and Abl 3). Those scripts logged las
 val metrics during training; this script provides the proper test-set inference step.
 
 Abl 2 checkpoints (2-task configs at ε=5, embed_dim=64):
-    best_abl2_ihm_decomp_seed{N}.pt  — active tasks: IHM + Decomp
-    best_abl2_ihm_pheno_seed{N}.pt   — active tasks: IHM + Pheno
+    bestmean_abl2_ihm_decomp_seed{N}.pt  — active tasks: IHM + Decomp
+    bestmean_abl2_ihm_pheno_seed{N}.pt   — active tasks: IHM + Pheno
 
 Abl 3 checkpoints (embed_dim × ε grid, all 3 tasks):
-    best_abl3_embed{D}_eps{E}_seed{N}.pt  — D ∈ {32,64,128}, E ∈ {inf,1,5}
+    bestmean_abl3_embed{D}_eps{E}_seed{N}.pt  — D ∈ {32,64,128}, E ∈ {inf,1,5}
 
 Output: results/test_ablations_dp.csv
   columns: ablation, config, embed_dim, epsilon_level, seed,
@@ -45,8 +45,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, accuracy_score
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, SEEDS
 
-from data_prep.dataset import build_site_loaders
+from data_prep.dataset import build_site_loaders, check_same_stays
 from experiments.metrics import ihm_metrics, decomp_metrics, pheno_metrics
 from fl.client import VFLClient
 from fl.server import VFLServer
@@ -56,7 +57,6 @@ from train import make_synthetic_loaders
 # Constants
 # ---------------------------------------------------------------------------
 
-SEEDS = [42, 123, 7]
 SITE_INPUT_DIMS = {"A": 7, "B": 4, "C": 3}
 
 ABL2_CONFIGS = {
@@ -123,6 +123,7 @@ def _eval_tasks(
     labels: dict[str, list] = {t: [] for t in ("ihm", "decomp", "pheno")}
 
     for bA, bB, bC in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(bA, bB, bC)
         xA, mA, yI = bA
         xB, mB, yD = bB
         xC, mC, yP = bC
@@ -167,7 +168,8 @@ def _extract_zA(clients: dict, loaders: dict) -> tuple[np.ndarray, np.ndarray]:
     """Extract Site A embeddings and IHM labels for label inference."""
     clients["A"].encoder.eval()
     zA_list, y_list = [], []
-    for bA, _, _ in zip(loaders["A"], loaders["B"], loaders["C"]):
+    for bA, bB, bC in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(bA, bB, bC)
         xA, mA, yI = bA
         z = clients["A"].eval_forward(xA, mA).cpu().numpy()
         zA_list.append(z)
@@ -260,9 +262,7 @@ def main() -> None:
     parser.add_argument("--root",          default=".")
     parser.add_argument("--ckpt_dir",      default="checkpoints")
     parser.add_argument("--output",        default="results/test_ablations_dp.csv")
-    parser.add_argument("--batch_size",    type=int, default=64)
-    parser.add_argument("--align_stays", action="store_true",
-                        help="same ICU stay at the same row across sites (use for models trained with it)")
+    parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--device",        default="cpu")
     parser.add_argument("--use_synthetic", action="store_true")
     args = parser.parse_args()
@@ -288,10 +288,8 @@ def main() -> None:
     else:
         project_root = Path(args.root)
         print("[evaluate_test_ablations_dp] Loading train and test data loaders...")
-        train_loaders = build_site_loaders(project_root, "train", args.batch_size,
-                                           align_stays=args.align_stays)
-        test_loaders  = build_site_loaders(project_root, "test",  args.batch_size,
-                                           align_stays=args.align_stays)
+        train_loaders = build_site_loaders(project_root, "train", args.batch_size)
+        test_loaders  = build_site_loaders(project_root, "test",  args.batch_size)
 
     all_rows: list[dict] = []
 
@@ -299,7 +297,7 @@ def main() -> None:
     print("\n--- Ablation 2: task coupling (ihm_decomp vs ihm_pheno at ε=5) ---")
     for config_name, cfg in ABL2_CONFIGS.items():
         for seed in SEEDS:
-            ckpt_path = ckpt_dir / f"best_abl2_{config_name}_seed{seed}.pt"
+            ckpt_path = ckpt_dir / f"bestmean_abl2_{config_name}_seed{seed}.pt"
             row = _eval_checkpoint(
                 ckpt_path     = ckpt_path,
                 ablation      = "abl2",
@@ -320,7 +318,7 @@ def main() -> None:
     for embed_dim in ABL3_EMBED_DIMS:
         for eps_label in ABL3_EPS_LABELS:
             for seed in SEEDS:
-                ckpt_path = ckpt_dir / f"best_abl3_embed{embed_dim}_eps{eps_label}_seed{seed}.pt"
+                ckpt_path = ckpt_dir / f"bestmean_abl3_embed{embed_dim}_eps{eps_label}_seed{seed}.pt"
                 row = _eval_checkpoint(
                     ckpt_path     = ckpt_path,
                     ablation      = "abl3",

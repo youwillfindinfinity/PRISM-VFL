@@ -28,13 +28,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import random
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 from sklearn.metrics import (
     average_precision_score,
@@ -43,7 +44,11 @@ from sklearn.metrics import (
 
 from torch.utils.data import DataLoader, TensorDataset
 
-from data_prep.dataset import build_site_loaders
+from data_prep.dataset import SeededShuffle, build_site_loaders, check_same_stays
+from experiment_config import (
+    BATCH_SIZE, CHECKPOINT_SELECTION, CLIPPING_NORM, DELTA, LEARNING_RATE, MAX_ROUNDS,
+    PATIENCE, TASK_WEIGHTS, git_commit,
+)
 from fl.client import VFLClient
 from fl.fedavg import fedavg_aggregate
 from fl.fedprox import fedprox_penalty
@@ -58,15 +63,15 @@ from fl.server import VFLServer, _BCE, _weighted_bce
 class TrainConfig:
     """All hyperparameters and flags for a single VFL-MTL training run."""
     splits_dir:         str   = "data/vertical_splits"
-    n_rounds:           int   = 50
-    batch_size:         int   = 64
-    lr:                 float = 1e-3
+    n_rounds:           int   = MAX_ROUNDS
+    batch_size:         int   = BATCH_SIZE
+    lr:                 float = LEARNING_RATE
     seed:               int   = 42
     device:             str   = field(default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu")
     hidden_dim:         int   = 128
     embed_dim:          int   = 64
     num_experts:        int   = 4
-    task_weights:       dict  = field(default_factory=lambda: {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0})
+    task_weights:       dict  = field(default_factory=lambda: dict(TASK_WEIGHTS))
     site_input_dims:    dict  = field(default_factory=lambda: {"A": 7, "B": 4, "C": 3})
     n_sites:            int   = 3
     use_fedavg:         bool  = True
@@ -79,11 +84,8 @@ class TrainConfig:
     eval_every:         int   = 1
     model_name:         str   = "VFL-MTL"   # used for checkpoint filename
     ckpt_dir:           str   = "checkpoints"
-    # 0.0 = auto-compute from site_B_labs.csv train split at run start.
-    # Set explicitly only for synthetic runs (use 1.0) or to override.
-    decomp_pos_weight:  float = 0.0
     # Rounds without mean-AUROC improvement before stopping (0 = disabled).
-    patience:           int   = 15
+    patience:           int   = PATIENCE
     # Ablation flags (Week 4)
     use_mmoe:           bool  = True   # False = shared-bottom MLP (Abl 1)
     uniform_gating:     bool  = False  # True  = fixed equal expert weights (Abl 4)
@@ -217,9 +219,8 @@ def train_one_round(
     total_loss_sum = 0.0
     n_batches = 0
 
-    # All three loaders cover the same PSI-aligned ICU stays; zip stops
-    # at the shortest loader. Lengths should be equal but zip is safe.
     for batch_A, batch_B, batch_C in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(batch_A, batch_B, batch_C)
         x_A, mask_A, y_ihm    = batch_A
         x_B, mask_B, y_decomp = batch_B
         x_C, mask_C, y_pheno  = batch_C
@@ -290,6 +291,7 @@ def evaluate(
     all_labels: dict[str, list] = {"ihm": [], "decomp": [], "pheno": []}
 
     for batch_A, batch_B, batch_C in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(batch_A, batch_B, batch_C)
         x_A, mask_A, y_ihm    = batch_A
         x_B, mask_B, y_decomp = batch_B
         x_C, mask_C, y_pheno  = batch_C
@@ -391,48 +393,45 @@ def run_training(
     active_sites = list(_all_dims.keys())[:cfg.n_sites]
 
     if prebuilt_loaders is not None:
-        train_loaders = {s: prebuilt_loaders["train"][s] for s in active_sites}
-        val_loaders   = {s: prebuilt_loaders["val"][s]   for s in active_sites}
-        decomp_pos_weight = prebuilt_loaders.get("decomp_pos_weight", 1.0)
+        all_train, all_val = prebuilt_loaders["train"], prebuilt_loaders["val"]
     elif cfg.use_synthetic:
-        decomp_pos_weight = 1.0   # no real imbalance in synthetic data
         n_batches = max(1, cfg.n_synthetic // cfg.batch_size)
-        train_loaders = make_synthetic_loaders(cfg.batch_size, cfg.max_seq_len, n_batches)
-        val_loaders   = make_synthetic_loaders(cfg.batch_size, cfg.max_seq_len, max(1, n_batches // 4))
-        train_loaders = {s: train_loaders[s] for s in active_sites}
-        val_loaders   = {s: val_loaders[s]   for s in active_sites}
+        all_train = make_synthetic_loaders(cfg.batch_size, cfg.max_seq_len, n_batches)
+        all_val   = make_synthetic_loaders(cfg.batch_size, cfg.max_seq_len, max(1, n_batches // 4))
     else:
-        # Auto-compute decomp pos_weight from training split unless caller provided one.
-        if cfg.decomp_pos_weight > 0.0:
-            decomp_pos_weight = cfg.decomp_pos_weight
-        else:
-            site_b_csv = Path(cfg.splits_dir) / "site_B_labs.csv"
-            _b = pd.read_csv(site_b_csv, usecols=["y_decomp", "split"])
-            pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-            assert 0.0 < pos_rate < 1.0, f"Degenerate decomp positive rate: {pos_rate}"
-            decomp_pos_weight = (1.0 - pos_rate) / pos_rate
-            print(f"[train] Decomp pos_weight auto-computed: {decomp_pos_weight:.1f}  "
-                  f"(pos_rate={pos_rate:.3%})")
-            if pos_rate < 0.005 or pos_rate > 0.5:
-                print(f"[train] WARNING: decomp pos_rate={pos_rate:.3%} is outside expected "
-                      f"5–50% range — check site_B_labs.csv alignment.")
-
         # build_site_loaders expects project root and appends data/vertical_splits internally
         project_root = Path(cfg.splits_dir).parents[1]
-        train_loaders = build_site_loaders(
+        all_train = build_site_loaders(
             project_root, "train", cfg.batch_size, cfg.num_workers, cfg.max_seq_len
         )
-        val_loaders = build_site_loaders(
+        all_val = build_site_loaders(
             project_root, "val", cfg.batch_size, cfg.num_workers, cfg.max_seq_len
         )
-        train_loaders = {s: train_loaders[s] for s in active_sites}
-        val_loaders   = {s: val_loaders[s]   for s in active_sites}
+    train_loaders = {s: all_train[s] for s in active_sites}
+    val_loaders   = {s: all_val[s]   for s in active_sites}
+
+    # Decomp pos_weight = N_neg / N_pos over the aligned train stays the model actually sees.
+    site_b_train = all_train["B"].dataset
+    if hasattr(site_b_train, "labels"):
+        pos_rate = float(np.mean(site_b_train.labels))
+        assert 0.0 < pos_rate < 1.0, f"Degenerate decomp positive rate: {pos_rate}"
+        decomp_pos_weight = (1.0 - pos_rate) / pos_rate
+        print(f"[train] decomp prevalence {pos_rate:.3%} on {len(site_b_train):,} aligned "
+              f"train stays -> pos_weight={decomp_pos_weight:.2f}")
+    else:
+        decomp_pos_weight = 1.0   # synthetic data: no real imbalance
+
+    # Same batch order at every site, reproducible per seed, also for reused prebuilt loaders.
+    for loader in train_loaders.values():
+        if isinstance(loader.sampler, SeededShuffle):
+            loader.sampler.set_seed(cfg.seed)
 
     # ---- Differential Privacy setup ----
     _dp_enabled = cfg.privacy_config is not None
     _dp_mechanism = None
     _dp_accountant = None
-    _dp_delta = 1e-5
+    _dp_delta = DELTA
+    _max_grad_norm = None
     _dp_sample_rate = 1.0
     _dp_sigma_map: dict[str, float] = {}
 
@@ -441,8 +440,8 @@ def run_training(
         from privacy.renyi_accountant import RenyiAccountant
 
         pc = cfg.privacy_config
-        _dp_delta = float(pc.get("delta", 1e-5))
-        _max_grad_norm = float(pc.get("max_grad_norm", 1.0))
+        _dp_delta = float(pc.get("delta", DELTA))
+        _max_grad_norm = float(pc.get("max_grad_norm", CLIPPING_NORM))
         _dp_mechanism = AdaptiveDPSGD(max_grad_norm=_max_grad_norm)
 
         if pc["mode"] == "uniform":
@@ -472,6 +471,22 @@ def run_training(
             f"max_grad_norm={_max_grad_norm}  delta={_dp_delta}  "
             f"sample_rate={_dp_sample_rate:.5f}  sigma={_dp_sigma_map}"
         )
+
+    # Everything needed to reproduce this run, as one line in the job log (T13).
+    print("[run_config] " + json.dumps({
+        "model_name": cfg.model_name, "seed": cfg.seed, "git_commit": git_commit(),
+        "command": " ".join(sys.argv), "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "torch": torch.__version__, "device": str(device),
+        "batch_size": cfg.batch_size, "learning_rate": cfg.lr, "max_rounds": cfg.n_rounds,
+        "patience": cfg.patience, "task_weights": cfg.task_weights,
+        "uncertainty_weighting": cfg.uncertainty_weighting,
+        "aligned_ntrain": len(all_train[active_sites[0]].dataset),
+        "batches_per_round": len(train_loaders[active_sites[0]]),
+        "dp": _dp_enabled, "clipping_norm": _max_grad_norm, "delta": _dp_delta if _dp_enabled else None,
+        "sample_rate": _dp_sample_rate if _dp_enabled else None, "sigma_by_task": _dp_sigma_map or None,
+        "epsilon": "spent per round in the epsilon_* result columns" if _dp_enabled else None,
+        "checkpoint_selection": CHECKPOINT_SELECTION, "decomp_pos_weight": round(decomp_pos_weight, 4),
+    }))
 
     # ---- Models ----
     clients: dict[str, VFLClient] = {}
@@ -510,7 +525,6 @@ def run_training(
     if cfg.init_from:
         load_checkpoint(Path(cfg.init_from), clients, server)
 
-    best_val_ihm = -1.0
     best_round   = 0
     # Early stopping: track mean AUROC over tasks with nonzero weight.
     _active_auroc_keys = (
@@ -618,18 +632,9 @@ def run_training(
             for _vl_key in ("val_ihm_loss", "val_decomp_loss", "val_pheno_loss"):
                 if _vl_key in val_metrics:
                     row[_vl_key] = val_metrics[_vl_key]
-            # Save best checkpoint (keyed by model_name so each config gets its own file)
-            score = val_metrics.get("ihm_auroc", -1.0)
-            if score > best_val_ihm:
-                best_val_ihm = score
-                save_checkpoint(
-                    ckpt_dir / f"best_{cfg.model_name}_seed{cfg.seed}.pt",
-                    rnd + 1, clients, server,
-                )
-            # Early stopping: plain mean AUROC across active tasks — identical rule
-            # regardless of training-time weighting scheme (uncertainty vs equal), so
-            # checkpoint selection is never itself a hidden variable in a comparison.
-            # best_round follows the same rule (tracked even when patience == 0).
+            # Checkpoint selection and early stopping (manuscript §2.4.3): plain mean val
+            # AUROC across active tasks, identical regardless of training-time weighting
+            # scheme; the best round's state is the one checkpoint kept for evaluation.
             if _active_auroc_keys:
                 present = [val_metrics[k] for k in _active_auroc_keys if k in val_metrics]
                 if present:
@@ -677,6 +682,7 @@ def _train_one_round_sites(
 
     for batches in zip(*loader_iters):
         # batches is a tuple of (x, mask, y) per site in active_sites order
+        check_same_stays(*batches)
         embeddings = {}
         labels = {}
         for site, (x, mask, y) in zip(active_sites, batches):
@@ -767,6 +773,7 @@ def _evaluate_sites(clients, server, loaders, active_sites, site_input_dims, all
     loader_iters = [loaders[s] for s in active_sites]
 
     for batches in zip(*loader_iters):
+        check_same_stays(*batches)
         embeddings = {}
         labels = {}
         for site, (x, mask, y) in zip(active_sites, batches):

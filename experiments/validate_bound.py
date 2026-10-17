@@ -40,12 +40,11 @@ import numpy as np
 from scipy.stats import norm
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, CLIPPING_NORM as MAX_GRAD_NORM, DELTA, EPSILON_LEVELS as CONFIG_EPSILON_LEVELS, MAX_ROUNDS
 
 # ρ values to sweep (task gradient correlation proxy)
 RHO_VALUES     = [0.1, 0.3, 0.5, 0.7, 0.9]
-EPSILON_LEVELS = ["inf", "10.0", "5.0", "2.0", "1.0", "0.5"]
-DELTA          = 1e-5
-MAX_GRAD_NORM  = 1.0
+EPSILON_LEVELS = [str(e) for e in CONFIG_EPSILON_LEVELS]
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +122,8 @@ def main() -> None:
     )
     parser.add_argument("--label_inference_csv", default="results/label_inference.csv")
     parser.add_argument("--output",              default="results/bound_validation.csv")
-    parser.add_argument("--n_rounds",            type=int, default=100)
-    parser.add_argument("--batch_size",          type=int, default=64)
+    parser.add_argument("--n_rounds",            type=int, default=MAX_ROUNDS)
+    parser.add_argument("--batch_size",          type=int, default=BATCH_SIZE)
     parser.add_argument("--use_synthetic",       action="store_true")
     parser.add_argument("--n_synthetic",         type=int, default=256)
     parser.add_argument("--splits_dir",          default="data/vertical_splits")

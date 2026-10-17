@@ -32,8 +32,9 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, SEEDS
 
-from data_prep.dataset import build_site_loaders
+from data_prep.dataset import build_site_loaders, check_same_stays
 from fl.client import VFLClient
 from fl.server import VFLServer
 from model.encoder import SiteEncoder
@@ -41,7 +42,6 @@ from baselines.local_only import _SITE_CFG, _LocalHead
 from baselines.centralized import CentralizedEncoder, CentralizedDataset, _collate, _EMBED_DIM
 from model.mmoe import MMoEServer
 
-SEEDS = [42, 123, 7]
 
 NODP_IHM_MODELS   = ["local_A", "ST-IHM",    "VFL-MTL", "centralized_oracle"]
 NODP_DECOMP_MODELS= ["local_B", "ST-Decomp",  "VFL-MTL", "centralized_oracle"]
@@ -77,6 +77,7 @@ def _run_vfl(clients, server, loaders) -> dict[str, tuple[np.ndarray, np.ndarray
     pred_ihm, lbl_ihm = [], []
     pred_dec, lbl_dec = [], []
     for bA, bB, bC in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(bA, bB, bC)
         xA, mA, yI = bA; xB, mB, yD = bB; xC, mC, _ = bC
         embs = {"A": clients["A"].eval_forward(xA, mA),
                 "B": clients["B"].eval_forward(xB, mB),
@@ -143,10 +144,10 @@ def _run_centralized(ckpt_path: Path, root: str, batch_size: int, device: str
 
 def _dp_ckpt_name(eps: float, mode: str, seed: int) -> str:
     if not np.isfinite(eps):
-        return f"best_VFL-MTL_seed{seed}.pt"
+        return f"bestmean_VFL-MTL_seed{seed}.pt"
     # uniform checkpoints saved as eps1.0, eps2.0 ... ; stratified as eps5 (no decimal)
     eps_str = str(int(eps)) if mode == "stratified" else str(float(eps))
-    return f"best_DP-{mode}-eps{eps_str}-seed{seed}_seed{seed}.pt"
+    return f"bestmean_DP-{mode}-eps{eps_str}-seed{seed}_seed{seed}.pt"
 
 
 # ── writers ───────────────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ def _write_rows_dp(writer, eps: float, mode: str, seed: int,
 def run_nodp(args):
     root     = Path(args.root)
     ckpt_dir = root / args.ckpt_dir
-    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48, align_stays=args.align_stays)
+    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48)
     out      = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -183,7 +184,7 @@ def run_nodp(args):
 
         for model_name in ["VFL-MTL", "ST-IHM", "ST-Decomp"]:
             for seed in SEEDS:
-                ckpt = ckpt_dir / f"best_{model_name}_seed{seed}.pt"
+                ckpt = ckpt_dir / f"bestmean_{model_name}_seed{seed}.pt"
                 if not ckpt.exists():
                     print(f"  [SKIP] {ckpt.name}"); continue
                 clients, server = _load_vfl_ckpt(ckpt, args.device)
@@ -220,7 +221,7 @@ def run_nodp(args):
 def run_dp(args):
     root     = Path(args.root)
     ckpt_dir = root / args.ckpt_dir
-    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48, align_stays=args.align_stays)
+    loaders  = build_site_loaders(root, "test", args.batch_size, 0, 48)
     out      = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -252,9 +253,7 @@ def main():
     p.add_argument("--mode",       choices=["nodp", "dp"], required=True)
     p.add_argument("--root",       default=".")
     p.add_argument("--ckpt_dir",   default="checkpoints")
-    p.add_argument("--batch_size", type=int, default=64)
-    p.add_argument("--align_stays", action="store_true",
-                   help="same ICU stay at the same row across sites (use for models trained with it)")
+    p.add_argument("--batch_size", type=int, default=BATCH_SIZE)
     p.add_argument("--device",     default="cpu")
     p.add_argument("--output",     default=None)
     args = p.parse_args()

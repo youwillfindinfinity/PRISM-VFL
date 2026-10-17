@@ -27,7 +27,6 @@ pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/nul
 python experiments/ablations_dp.py \
     --splits_dir data/vertical_splits \
     --output results/dp_ablations.csv \
-    --device cuda \
-    --save_checkpoint
+    --device cuda
 
 echo "[dp_ablations] Done. Results in results/dp_ablations.csv"

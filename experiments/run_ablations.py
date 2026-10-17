@@ -32,13 +32,12 @@ import csv
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, MAX_ROUNDS, PATIENCE, SEEDS
 from train import run_training, TrainConfig
 from data_prep.dataset import build_site_loaders
 
-SEEDS = [42, 123, 7]
 
 # All ablations run all 3 tasks and all 3 sites unless a specific component varies.
 _BASE = {
@@ -49,7 +48,6 @@ CONFIGS = {
     # ---- Baseline reference (matches run_exp1.py VFL-MTL config exactly) ----
     "VFL-MTL": {
         **_BASE,
-        "uncertainty_weighting": True,
     },
 
     # ---- Abl 1: No MMoE — shared-bottom MLP, no gating ----
@@ -90,30 +88,23 @@ CONFIGS = {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--splits_dir",    default="data/vertical_splits")
-    parser.add_argument("--n_rounds",      type=int, default=100)
-    parser.add_argument("--batch_size",    type=int, default=64)
+    parser.add_argument("--n_rounds",      type=int, default=MAX_ROUNDS)
+    parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--device",        default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     parser.add_argument("--output",        default="results/ablations.csv")
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
-    parser.add_argument("--patience",      type=int, default=15)
+    parser.add_argument("--patience",      type=int, default=PATIENCE)
     args = parser.parse_args()
 
-    decomp_pos_weight = 1.0
     prebuilt = None
 
     if not args.use_synthetic:
         print("[ablations] Pre-loading data loaders (one-time GPFS read)...")
         project_root = Path(args.splits_dir).parents[1]
-        site_b_csv = Path(args.splits_dir) / "site_B_labs.csv"
-        _b = pd.read_csv(site_b_csv, usecols=["y_decomp", "split"])
-        pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-        decomp_pos_weight = (1.0 - pos_rate) / pos_rate
-        print(f"[ablations] decomp pos_weight={decomp_pos_weight:.1f} (pos_rate={pos_rate:.3%})")
         prebuilt = {
             "train": build_site_loaders(project_root, "train", args.batch_size),
             "val":   build_site_loaders(project_root, "val",   args.batch_size),
-            "decomp_pos_weight": decomp_pos_weight,
         }
         print("[ablations] Data loaded. Starting ablation runs...")
 
@@ -132,7 +123,6 @@ def main():
                 n_synthetic=args.n_synthetic,
                 model_name=model_name,
                 patience=args.patience,
-                decomp_pos_weight=decomp_pos_weight,
                 **model_cfg,
             )
             results = run_training(cfg, prebuilt_loaders=prebuilt)

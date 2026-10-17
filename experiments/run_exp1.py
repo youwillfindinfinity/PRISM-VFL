@@ -27,18 +27,17 @@ import csv
 import sys
 from pathlib import Path
 
-import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, MAX_ROUNDS, PATIENCE, SEEDS
 from train import run_training, TrainConfig
 from data_prep.dataset import build_site_loaders
 
-SEEDS = [42, 123, 7]
 
 CONFIGS = {
+    # Equal task weights (manuscript Eq. 3).
     "VFL-MTL": {
         "task_weights": {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0},
-        "uncertainty_weighting": True,
     },
     # Per-site single-task baselines: each trains on its own site's task only.
     # ST-IHM (Site A), ST-Decomp (Site B), ST-Pheno (Site C) together form the
@@ -58,14 +57,14 @@ CONFIGS = {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--splits_dir",    default="data/vertical_splits")
-    parser.add_argument("--n_rounds",      type=int, default=100)
-    parser.add_argument("--batch_size",    type=int, default=64)
+    parser.add_argument("--n_rounds",      type=int, default=MAX_ROUNDS)
+    parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--device",        default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     parser.add_argument("--output",        default="results/exp1.csv")
     parser.add_argument("--use_synthetic", action="store_true",
                         help="Use random synthetic data (smoke test, no real data needed)")
     parser.add_argument("--n_synthetic",   type=int, default=256)
-    parser.add_argument("--patience",      type=int, default=15,
+    parser.add_argument("--patience",      type=int, default=PATIENCE,
                         help="Early stopping patience in rounds (0 = disabled)")
     args = parser.parse_args()
 
@@ -73,19 +72,12 @@ def main():
     # Avoids 12 repeated GPFS reads (4 configs × 3 seeds) that dominate runtime.
     if args.use_synthetic:
         prebuilt = None
-        decomp_pos_weight = 1.0
     else:
         print("[exp1] Pre-loading data loaders (one-time GPFS read)...")
         project_root = Path(args.splits_dir).parents[1]
-        site_b_csv = Path(args.splits_dir) / "site_B_labs.csv"
-        _b = pd.read_csv(site_b_csv, usecols=["y_decomp", "split"])
-        pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-        decomp_pos_weight = (1.0 - pos_rate) / pos_rate
-        print(f"[exp1] decomp pos_weight={decomp_pos_weight:.1f} (pos_rate={pos_rate:.3%})")
         prebuilt = {
             "train": build_site_loaders(project_root, "train", args.batch_size),
             "val":   build_site_loaders(project_root, "val",   args.batch_size),
-            "decomp_pos_weight": decomp_pos_weight,
         }
         print("[exp1] Data loaded. Starting training runs...")
 
@@ -106,7 +98,6 @@ def main():
                 n_synthetic=args.n_synthetic,
                 model_name=model_name,
                 patience=args.patience,
-                decomp_pos_weight=decomp_pos_weight,
                 **model_cfg,
             )
             results = run_training(cfg, prebuilt_loaders=prebuilt)

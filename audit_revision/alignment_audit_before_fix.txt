@@ -1,0 +1,81 @@
+T02_ALIGNMENT_AUDIT_PRE_FIX + T03_COMPARE_TO_MANUSCRIPT_COUNTS
+================================================================
+Generated: 2026-10-17T09:10:24+02:00 on int6.local.snellius.surf.nl (read-only, pandas)
+Data:      /gpfs/home4/asoare/vfl_mlt/data/vertical_splits (unmodified; SHA-256 in JSON)
+Full metrics: alignment_audit_before_fix.json
+
+Two views are reported per split:
+  RAW       = every row of the site CSV with that split label
+  PRE-FIX   = what the pre-fix loader kept: RAW rows whose subject_id is in
+              aligned_patient_ids.csv for that split (patient-level filter only)
+
+T01 — site data located: PASS
+  site_A_vitals.csv, site_B_labs.csv, site_C_composite.csv all present with
+  stay, subject_id, split. aligned_patient_ids.csv: 18,090 subjects, NO stay column.
+
+PRE-FIX loader view (what the manuscript experiments trained/evaluated on)
+---------------------------------------------------------------------------
+                         train      val     test
+rows A                  14,679    3,221    3,235
+rows B                  17,516    3,818    3,808
+rows C                  17,533    3,819    3,810
+unique subjects (each)  12,563    2,765    2,762
+common stays A∩B∩C      14,679    3,221    3,235
+stays in B not A         2,837      597      573
+stays in C not A         2,854      598      575
+stays in C not B            17        1        2
+stays in A not B / not C     0        0        0
+same length A/B/C           no       no       no
+same stay order A/B/C       no       no       no
+same subject order A/B/C    no       no       no
+same stay at same row A-B  0.0%     0.0%     0.5%
+same stay at same row A-C  0.0%     0.1%     0.0%
+same stay at same row B-C  2.2%    43.7%     0.0%
+stay->subject identical    yes      yes      yes
+duplicate stay rows        0        0        0
+
+RAW view (whole site CSVs, before the patient filter)
+------------------------------------------------------
+                         train      val     test
+rows A / B / C          14,681 / 29,030 / 29,250   3,222 / 6,335 / 6,371   3,236 / 6,237 / 6,281
+common stays A∩B∩C      14,679    3,221    3,235
+stays in A not B             2        1        1   (A stays outside the aligned cohort)
+stay->subject identical    yes      yes      yes
+duplicate stay rows        0        0        0
+same stay/subject order     no       no       no
+
+Critical assertions
+-------------------
+- Raw order is NOT required to match to proceed with a fix: confirmed it does not.
+- stay->subject mapping consistent for common stays: YES (0 conflicts, all splits).
+  -> STOP_STAY_SUBJECT_CONFLICT not triggered.
+
+Findings
+--------
+1. Root cause confirmed. The patient-level filter keeps the same PATIENTS at every
+   site but not the same STAYS: B and C keep ~2,850 extra train stays (~600 val,
+   ~575 test) that A does not have, so the per-site tables have different lengths
+   and orders. Row i is almost never the same stay across sites (0-2% in train).
+2. A's stays are a subset of B and C in every split (A_not_B = A_not_C = 0), so
+   the stay intersection equals site A: 14,679 / 3,221 / 3,235 stays.
+3. Patients have more than one stay: 14,679 train stays from 12,563 patients
+   (1.17 stays/patient). The aligned cohort is 18,090 PATIENTS
+   (12,563 / 2,765 / 2,762 = 69.4% / 15.3% / 15.3%).
+
+T03 — comparison with manuscript Table 2 (training rows A=14,679, B=17,516, C=17,533)
+--------------------------------------------------------------------------------------
+PRE-FIX loader train counts: A=14,679  B=17,516  C=17,533
+  exact_match_to_manuscript = TRUE   (absolute difference 0 / 0 / 0)
+RAW train counts:            A=14,681  B=29,030  C=29,250
+  exact_match_to_manuscript = FALSE  (absolute difference 2 / 11,514 / 11,717)
+
+=> Local data reproduce the manuscript's unequal counts exactly; Table 2 reports the
+   per-site row counts of the misaligned pre-fix loader.
+
+Manuscript implications (for T17, not acted on here)
+----------------------------------------------------
+- M1 ("18,090 unique patients, each containing one ICU stay") is inconsistent with
+  the data: the cohort is 18,090 patients but 14,679 + 3,221 + 3,235 = 21,135
+  aligned stays (multiple stays per patient).
+- M2 (Table 2 unequal counts) reflects the alignment defect; after the fix every
+  site has 14,679 train stays.

@@ -28,13 +28,13 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, SEEDS
 
-from data_prep.dataset import build_site_loaders
+from data_prep.dataset import build_site_loaders, check_same_stays
 from experiments.metrics import ihm_metrics, decomp_metrics, pheno_metrics
 from fl.client import VFLClient
 from fl.server import VFLServer
 
-SEEDS = [42, 123, 7]
 
 TASK_CONFIGS = ["all_tasks", "ihm_only", "ihm_decomp", "ihm_pheno"]
 
@@ -75,6 +75,7 @@ def _eval_vfl(clients: dict, server: VFLServer, loaders: dict,
     labels = {"ihm": [], "decomp": [], "pheno": []}
 
     for bA, bB, bC in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(bA, bB, bC)
         xA, mA, yI = bA
         xB, mB, yD = bB
         xC, mC, yP = bC
@@ -117,7 +118,7 @@ def eval_exp2(ckpt_dir: Path, loaders: dict, device: str = "cpu") -> list[dict]:
 
     for config_name in TASK_CONFIGS:
         for seed in SEEDS:
-            ckpt_path = ckpt_dir / f"best_exp2_{config_name}_seed{seed}.pt"
+            ckpt_path = ckpt_dir / f"bestmean_exp2_{config_name}_seed{seed}.pt"
             if not ckpt_path.exists():
                 print(f"  [SKIP] {ckpt_path.name} not found")
                 continue
@@ -158,9 +159,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--root",          default=".")
     p.add_argument("--ckpt_dir",      default="checkpoints")
-    p.add_argument("--batch_size",    type=int, default=64)
-    p.add_argument("--align_stays", action="store_true",
-                   help="same ICU stay at the same row across sites (use for models trained with it)")
+    p.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     p.add_argument("--device",        default="cpu")
     p.add_argument("--output",        default="results/test_exp2.csv")
     p.add_argument("--use_synthetic", action="store_true")
@@ -190,8 +189,7 @@ def main():
                 batch_size=args.batch_size, drop_last=True),
         }
     else:
-        loaders = build_site_loaders(Path(args.root), "test", args.batch_size,
-                                     align_stays=args.align_stays)
+        loaders = build_site_loaders(Path(args.root), "test", args.batch_size)
 
     all_rows = eval_exp2(ckpt_dir, loaders, args.device)
 

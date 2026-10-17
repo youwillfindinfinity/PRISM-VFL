@@ -1,0 +1,44 @@
+T00_FREEZE_STATE — repository state before the stay-alignment fix
+===================================================================
+
+DATE:   2026-10-17T15:02:47+08:00
+HOST:   eduvpn-uva-stu-145-3-0-43.vpn.uva.nl
+BRANCH: revision-1 (up to date with origin/revision-1)
+
+Frozen commits
+--------------
+
+1. MANUSCRIPT RESULTS — code behind the manuscript's original reported results
+   COMMIT:  942a1bc3b7ee25bb10bfc2dcc62810a3f691bb25
+   DATE:    2026-07-07 14:06:21 +0200
+   MESSAGE: (empty)
+   NOTE:    last commit before the revision-1 edits (a06a670). Rows across sites
+            were not stay-aligned (filtered on subject_id only, independent
+            per-site shuffles).
+
+2. PRE-FIX FREEZE (official) — state just before the alignment fix
+   COMMIT:  67e66bffe8ae44400997464ca7511920a4bc73c5
+   DATE:    2026-10-08 19:55:10 +0800
+   MESSAGE: Pin opacus for torch 2.1.2, fail job on error, unbuffered logs
+   NOTE:    includes the revision-1 P0 edits (a06a670: seed-matched privacy
+            sweep, seed-42 probes, stats script, diagnostics logging, stopping
+            rule = mean AUROC) but NOT the stay alignment. Snellius 2-round test
+            on this commit reported row alignment MISMATCH (train rows
+            A 14,679 / B 17,516 / C 17,533).
+
+Not frozen: current HEAD (98c896a, alignment fix as opt-in align_stays) — it is
+the starting point for T05–T07 and is expected to change; each rerun records its
+own commit.
+
+git status (at time of freeze, on HEAD 98c896a)
+-----------------------------------------------
+On branch revision-1
+Your branch is up to date with 'origin/revision-1'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        PRISM_VFL_REVISION_INSTRUCTIONS.md
+        revision_docs/
+        smoke_tests/revision1/
+
+nothing added to commit but untracked files present (use "git add" to track)

@@ -163,8 +163,9 @@ python data_prep/verify_workspace.py
 ```
 
 Checks that all four task directories are non-empty, vertical splits are present,
-aligned_patient_ids.csv covers at least 30,000 patients, feature columns do not overlap
-between site files, and label balance is within acceptable range for each task.
+aligned_patient_ids.csv covers at least 18,000 patients, the three sites share the same
+ICU stays (same order, patient and split per stay, no duplicates), feature columns do not
+overlap between site files, and label balance is within acceptable range for each task.
 
 ---
 

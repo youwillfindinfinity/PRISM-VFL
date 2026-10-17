@@ -32,6 +32,7 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, CLIPPING_NORM as MAX_GRAD_NORM, DELTA, MAX_ROUNDS, PATIENCE, SEEDS
 
 from train import run_training, TrainConfig, make_synthetic_loaders
 from attacks.label_inference import (
@@ -42,9 +43,6 @@ from attacks.label_inference import (
     _ckpt_path,
 )
 
-SEEDS          = [42, 123, 7]
-DELTA          = 1e-5
-MAX_GRAD_NORM  = 1.0
 ABL2_EPS       = 5.0
 EMBED_DIM      = 64
 
@@ -136,7 +134,6 @@ def run_abl2(
     args: argparse.Namespace,
     sample_rate: float,
     prebuilt: dict | None,
-    decomp_pos_weight: float,
 ) -> list[dict]:
     sigma = _compute_sigma(ABL2_EPS, sample_rate, args.n_rounds)
     if sigma is None:
@@ -170,7 +167,6 @@ def run_abl2(
                 use_synthetic=args.use_synthetic,
                 n_synthetic=args.n_synthetic,
                 patience=args.patience,
-                decomp_pos_weight=decomp_pos_weight,
                 model_name=model_name,
                 uncertainty_weighting=False,  # single σ per task; no log_var params needed
                 grad_sim_every=5,             # capture ρ every 5 rounds
@@ -192,7 +188,7 @@ def run_abl2(
             # Label inference attack on the trained checkpoint
             inf_auroc, inf_acc = float("nan"), float("nan")
             try:
-                ckpt = Path(args.ckpt_dir) / f"best_{model_name}_seed{seed}.pt"
+                ckpt = Path(args.ckpt_dir) / f"bestmean_{model_name}_seed{seed}.pt"
                 clients, server = _build_clients_and_server(device)
                 if ckpt.exists():
                     _load_weights(ckpt, clients, server)
@@ -238,7 +234,6 @@ def run_abl3(
     args: argparse.Namespace,
     sample_rate: float,
     prebuilt: dict | None,
-    decomp_pos_weight: float,
 ) -> list[dict]:
     rows: list[dict] = []
 
@@ -268,7 +263,6 @@ def run_abl3(
                     use_synthetic=args.use_synthetic,
                     n_synthetic=args.n_synthetic,
                     patience=args.patience,
-                    decomp_pos_weight=decomp_pos_weight,
                     model_name=model_name,
                     embed_dim=embed_dim,
                     privacy_config=privacy_cfg,
@@ -305,9 +299,9 @@ def main() -> None:
     parser.add_argument("--test_dp_csv",   default="results/test_results_dp.csv",
                         help="Test-set DP evaluation CSV for Abl 1 (uniform vs stratified at ε=5).")
     parser.add_argument("--output",        default="results/dp_ablations.csv")
-    parser.add_argument("--n_rounds",      type=int, default=100)
-    parser.add_argument("--batch_size",    type=int, default=64)
-    parser.add_argument("--patience",      type=int, default=15)
+    parser.add_argument("--n_rounds",      type=int, default=MAX_ROUNDS)
+    parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
+    parser.add_argument("--patience",      type=int, default=PATIENCE)
     parser.add_argument("--device",        default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
@@ -316,22 +310,16 @@ def main() -> None:
     args = parser.parse_args()
 
     # ---- Data ----
-    decomp_pos_weight = 1.0
     prebuilt = None
 
     if not args.use_synthetic:
         print("[ablations_dp] Pre-loading data loaders...")
         project_root = Path(args.splits_dir).parents[1]
-        site_b_csv   = Path(args.splits_dir) / "site_B_labs.csv"
-        _b = pd.read_csv(site_b_csv, usecols=["y_decomp", "split"])
-        pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-        decomp_pos_weight = (1.0 - pos_rate) / pos_rate
         prebuilt = {
             "train": __import__("data_prep.dataset", fromlist=["build_site_loaders"])
                      .build_site_loaders(project_root, "train", args.batch_size),
             "val":   __import__("data_prep.dataset", fromlist=["build_site_loaders"])
                      .build_site_loaders(project_root, "val",   args.batch_size),
-            "decomp_pos_weight": decomp_pos_weight,
         }
 
     # Sample rate for σ computation
@@ -351,10 +339,10 @@ def main() -> None:
     all_rows.extend(run_abl1(Path(args.test_dp_csv)))
 
     print("\n── Abl 2: related vs. unrelated task pair under DP ──")
-    all_rows.extend(run_abl2(args, sample_rate, prebuilt, decomp_pos_weight))
+    all_rows.extend(run_abl2(args, sample_rate, prebuilt))
 
     print("\n── Abl 3: embed_dim × DP interaction ──")
-    all_rows.extend(run_abl3(args, sample_rate, prebuilt, decomp_pos_weight))
+    all_rows.extend(run_abl3(args, sample_rate, prebuilt))
 
     if not all_rows:
         print("[ablations_dp] No results — exiting.")

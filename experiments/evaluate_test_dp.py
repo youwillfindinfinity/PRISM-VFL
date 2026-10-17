@@ -10,8 +10,8 @@ For each checkpoint:
   3. MIA: binary classifier trained on TRAIN (members) vs TEST (non-members)
 
 Checkpoints follow naming convention:
-  uniform    → checkpoints/best_DP-uniform-eps{label}-seed{N}.pt
-  stratified → checkpoints/best_DP-stratified-eps5-seed{N}.pt
+  uniform    → checkpoints/bestmean_DP-uniform-eps{label}-seed{N}_seed{N}.pt
+  stratified → checkpoints/bestmean_DP-stratified-eps5-seed{N}_seed{N}.pt
 
 (ε_level, mode) combinations are read from results/privacy_utility_combined.csv.
 If that file does not exist, defaults to all EPSILON_LEVELS × ["uniform"] + ("5.0", "stratified").
@@ -48,8 +48,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.multiclass import OneVsRestClassifier
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, EPSILON_LEVELS as CONFIG_EPSILON_LEVELS, SEEDS
 
-from data_prep.dataset import build_site_loaders
+from data_prep.dataset import build_site_loaders, check_same_stays
 from experiments.metrics import ihm_metrics, decomp_metrics, pheno_metrics
 from fl.client import VFLClient
 from fl.server import VFLServer
@@ -59,8 +60,7 @@ from train import make_synthetic_loaders
 # Constants
 # ---------------------------------------------------------------------------
 
-SEEDS          = [42, 123, 7]
-EPSILON_LEVELS = ["inf", "10.0", "5.0", "2.0", "1.0", "0.5"]
+EPSILON_LEVELS = [str(e) for e in CONFIG_EPSILON_LEVELS]
 EMBED_DIM      = 64
 SITE_INPUT_DIMS: dict[str, int] = {"A": 7, "B": 4, "C": 3}
 
@@ -71,12 +71,12 @@ SITE_INPUT_DIMS: dict[str, int] = {"A": 7, "B": 4, "C": 3}
 
 def _ckpt_path(ckpt_dir: Path, eps_label: str, mode: str, seed: int) -> Path:
     if str(eps_label) == "inf":
-        return ckpt_dir / f"best_VFL-MTL_seed{seed}.pt"
+        return ckpt_dir / f"bestmean_VFL-MTL_seed{seed}.pt"
     if mode == "stratified":
         name = f"DP-stratified-eps5-seed{seed}"
     else:
         name = f"DP-uniform-eps{eps_label}-seed{seed}"
-    return ckpt_dir / f"best_{name}_seed{seed}.pt"
+    return ckpt_dir / f"bestmean_{name}_seed{seed}.pt"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +125,7 @@ def _extract_embeddings(
     y_ihm_list, y_pheno_list = [], []
 
     for bA, bB, bC in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(bA, bB, bC)
         xA, mA, yI = bA
         xB, mB, _  = bB
         xC, mC, yP = bC
@@ -166,6 +167,7 @@ def _eval_task_metrics(
     phn_p, phn_l = [], []
 
     for bA, bB, bC in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(bA, bB, bC)
         xA, mA, yI = bA; xB, mB, yD = bB; xC, mC, yP = bC
         embs = {
             "A": clients["A"].eval_forward(xA.to(device), mA.to(device)),
@@ -342,9 +344,7 @@ def main() -> None:
     parser.add_argument("--output",        default="results/test_results_dp.csv")
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
-    parser.add_argument("--batch_size",    type=int, default=64)
-    parser.add_argument("--align_stays", action="store_true",
-                        help="same ICU stay at the same row across sites (use for models trained with it)")
+    parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--max_seq_len",   type=int, default=48)
     parser.add_argument("--num_workers",   type=int, default=4)
     parser.add_argument("--device",        default="cuda" if torch.cuda.is_available() else "cpu")
@@ -384,12 +384,10 @@ def main() -> None:
         train_loaders = build_site_loaders(
             project_root, "train", args.batch_size,
             num_workers=args.num_workers, max_seq_len=args.max_seq_len,
-            align_stays=args.align_stays,
         )
         test_loaders  = build_site_loaders(
             project_root, "test", args.batch_size,
             num_workers=args.num_workers, max_seq_len=args.max_seq_len,
-            align_stays=args.align_stays,
         )
 
     # Evaluate

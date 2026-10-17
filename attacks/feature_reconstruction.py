@@ -97,36 +97,13 @@ def _ckpt_path(ckpt_dir: str, eps_label: str, seed: int) -> Path:
     Resolve checkpoint path for a given epsilon level and seed.
 
     Rules (consistent with label_inference.py):
-      - eps="inf"    → best_VFL-MTL_seed{seed}.pt
-      - eps=other    → best_DP-uniform-eps{eps}-seed{seed}.pt
+      - eps="inf"    → bestmean_VFL-MTL_seed{seed}.pt
+      - eps=other    → bestmean_DP-uniform-eps{eps}-seed{seed}_seed{seed}.pt
     """
     base = Path(ckpt_dir)
     if str(eps_label) == "inf":
-        return base / f"best_VFL-MTL_seed{seed}.pt"
-    return base / f"best_DP-uniform-eps{eps_label}-seed{seed}.pt"
-
-
-def _find_ckpt(ckpt_dir: str, eps_label: str, seed: int) -> Path | None:
-    """
-    Try the canonical path first; fall back to any file matching *seed{seed}*.pt.
-    Returns None if nothing is found.
-    """
-    preferred = _ckpt_path(ckpt_dir, eps_label, seed)
-    if preferred.exists():
-        return preferred
-
-    # Glob fallback: any checkpoint that contains seed{seed} in its name
-    candidates = sorted(Path(ckpt_dir).glob(f"*seed{seed}*.pt"))
-    if candidates:
-        # Prefer a file that also has the eps label in the name
-        eps_str = str(eps_label).replace(".", "")
-        for c in candidates:
-            if eps_str in c.name:
-                return c
-        # Otherwise return the most recently modified one
-        return max(candidates, key=lambda p: p.stat().st_mtime)
-
-    return None
+        return base / f"bestmean_VFL-MTL_seed{seed}.pt"
+    return base / f"bestmean_DP-uniform-eps{eps_label}-seed{seed}_seed{seed}.pt"
 
 
 def _load_site_a_encoder(ckpt_path: Path, device: torch.device) -> VFLClient:
@@ -291,9 +268,9 @@ def _run_one_epsilon(
     print(f"\n[feat_recon] ε={eps_label} | seed={seed}")
 
     # ---- Load checkpoint ----
-    ckpt = _find_ckpt(ckpt_dir, eps_label, seed)
-    if ckpt is None:
-        print(f"  WARNING: no checkpoint found for ε={eps_label} seed={seed} — skipping.")
+    ckpt = _ckpt_path(ckpt_dir, eps_label, seed)
+    if not ckpt.exists():
+        print(f"  WARNING: {ckpt.name} not found — skipping.")
         return None
     print(f"  Loading: {ckpt.name}")
     client = _load_site_a_encoder(ckpt, device)

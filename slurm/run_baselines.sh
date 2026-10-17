@@ -17,8 +17,6 @@ cd "$SLURM_SUBMIT_DIR"
 
 pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/null
 
-python experiments/run_baselines.py \
-    --splits_dir data/vertical_splits \
-    --device cuda
+python experiments/run_baselines.py
 
 echo "[baselines] Done."

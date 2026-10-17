@@ -1,0 +1,80 @@
+{
+  "task": "T12_DP_PROVENANCE_AUDIT",
+  "generated": "2026-10-17",
+  "status": "PASS",
+  "stop_condition": "STOP_DP_PROVENANCE_UNKNOWN not triggered - every field established from saved logs, saved results and SLURM scripts",
+
+  "evidence_sources": {
+    "E1_saved_logs": "Snellius ~/vfl_mlt/slurm-22558279-dp_eps10.out, -22558280-dp_eps5.out, -22558320-dp_eps2.out, -22558321-dp_eps1.out, -22558322-dp_eps05.out (7 May 2026, the latest DP sweep; an identical earlier batch 22482845/2248528x-92 ran 5 May)",
+    "E2_saved_results": "results/privacy_utility_combined.csv (per-round epsilon_ihm/decomp/pheno, seeds 7/42/123)",
+    "E3_slurm_scripts": "Snellius ~/vfl_mlt/run_privacy_curves_eps{05,1,2,5,10}.sh",
+    "E4_source_code": "experiments/privacy_utility_curves.py, train.py (accountant step), data_prep/dataset.py - current revision-1 code; exact historical commit not pinned (see open_items)",
+    "E5_manuscript": "Table 2 (p.20), Table 3 (p.24)"
+  },
+
+  "historical_published_dp_runs": {
+    "actual_batch_size": {"value": 64, "evidence": "E3: --batch_size 64 in every run_privacy_curves_eps*.sh"},
+    "actual_aligned_ntrain": {
+      "value": {"A": 14679, "B": 17516, "C": 17533},
+      "note": "pre-fix loaders were not stay-aligned (T02/T03); site A was the shortest loader and zip() truncated B and C to A's 229 batches per round",
+      "evidence": "T02/T03 audit (alignment_audit_before_fix.json) reproducing Table 2 exactly"
+    },
+    "batches_per_round": {"value": 229, "derivation": "floor(14679 / 64) with drop_last=True; zip stops at site A", "evidence": "E1 sample_rate=0.00437 = 1/229 (64/14679 would print 0.00436)"},
+    "sampling_rate_q": {"value": 0.004367, "definition_in_code": "1 / number of train batches of site A (privacy_utility_curves.py, train.py)", "evidence": "E1: '[privacy_curves] sample_rate=0.00437  n_rounds=100' and '[train] DP enabled ... sample_rate=0.00437' in every log"},
+    "rounds": {"value": 100, "note": "patience=0 in privacy_utility_curves.py at the time: no early stopping", "evidence": "E1 n_rounds=100; E3 --n_rounds 100; E2 every DP run reaches round 100"},
+    "accounting_steps": {"value": 22900, "derivation": "229 steps per round (train.py: num_steps = len(train loader A)) x 100 rounds", "evidence": "E4 + E1 + E2"},
+    "delta": {"value": 1e-05, "evidence": "E1 'delta=1e-05'"},
+    "clipping_norm_C": {"value": 1.0, "evidence": "E1 'max_grad_norm=1.0'"},
+    "noise_multiplier_per_task": {
+      "uniform": {"10.0": 0.6900, "5.0": 0.9076, "2.0": 1.5918, "1.0": 2.7930, "0.5": 5.1562},
+      "stratified (labelled eps=5)": {"ihm": 1.5918, "decomp": 1.5918, "pheno": 2.7930},
+      "note": "uniform: same sigma for all three tasks",
+      "evidence": "E1 '[privacy_curves] eps=... -> sigma=...' and '[train] DP enabled ... sigma={...}'"
+    },
+    "final_epsilon_per_task": {
+      "uniform": {"0.5": 0.4970, "1.0": 0.9930, "2.0": 1.9956, "5.0": 4.9948, "10.0": 9.9907},
+      "stratified (labelled eps=5)": {"ihm": 1.9956, "decomp": 1.9956, "pheno": 0.9930},
+      "note": "max over rounds and seeds = round 100; identical for every task in uniform mode",
+      "evidence": "E2"
+    },
+    "evidence_source_for_each_field": "listed per field above"
+  },
+
+  "manuscript_vs_evidence": {
+    "table_2": {"claim": "B=64, N_train A/B/C = 14,679/17,516/17,533, q=0.00437", "verdict": "CONSISTENT with the runs (q is 1/229, i.e. 1/batches, not B/N=64/14,679=0.00436; text should state the definition)"},
+    "table_3": {"claim": "B=256, q = 256/18,094 = 0.014", "verdict": "NOT SUPPORTED by any log, script or result - incorrect; 18,094 is close to the 18,090 aligned PATIENTS, not training stays"},
+    "stratified_label": "Results label the stratified run 'eps=5' while its per-task budgets are 2/2/1 (sum 5); manuscript should state the per-task budgets explicitly"
+  },
+
+  "revised_frozen_configuration": {
+    "actual_batch_size": 64,
+    "actual_aligned_ntrain": 14679,
+    "aligned_ntrain_note": "same 14,679 stays at A, B and C after T05 (stay intersection = site A's stays)",
+    "batches_per_round": 229,
+    "sampling_rate_q": "1/229 = 0.004367 (unchanged: aligned N equals the old site-A N)",
+    "rounds": "max 100, early stopping with patience 15 (T10)",
+    "accounting_steps": "229 x rounds actually run (<= 22,900)",
+    "delta": 1e-05,
+    "clipping_norm_C": 1.0,
+    "noise_multiplier_per_task": "same sigma values as the historical runs (calibrated for q=1/229, 100 rounds, delta=1e-5)",
+    "final_epsilon_per_task": "epsilon actually spent at the stopping round, logged per round; <= target because sigma is calibrated for the full 100 rounds",
+    "evidence": "revision sweep on real data (Snellius job 27794984, 2-round test): aligned train = 14,679 stays; sample_rate = 1/len(train loader A)"
+  },
+
+  "accounting_caveats_reported_not_changed": [
+    "q is applied as Poisson-subsampling RDP accounting, while batches are formed by shuffling into fixed-size batches (sampling without replacement); this is the common DP-SGD practice but not strictly the Poisson assumption.",
+    "Historical runs: B and C rows had a per-step inclusion probability of about 64/17,516 because zip() used only 229 of their 273 batches per round; accounting with q=1/229 was conservative for them. After alignment all sites have exactly 229 batches, so q applies exactly."
+  ],
+
+  "open_items": {
+    "code_version": "Optional: pin the exact vfl_mlt commit that produced the 7 May logs (git history - evidence rank 4); not needed for any field above."
+  },
+
+  "manuscript_updates_for_T17": [
+    "Table 3: batch size 64 and sampling rate 1/229 = 0.00437 (remove 256/18,094 = 0.014).",
+    "Table 2 / DP text: N_train becomes 14,679 at every site (aligned stays); q defined as 1 / batches per round.",
+    "Report epsilon actually spent at the stopping round alongside the target (early stopping now on for DP runs).",
+    "State the stratified per-task budgets (2/2/1).",
+    "Response letter (R1-Q4): the published epsilon=inf point was not a DP-sweep run - its rows in results/privacy_utility_combined.csv are identical to the Exp 1 VFL-MTL rows (results/exp1.csv, seeds 7/42/123), i.e. an early-stopped model (patience 15, rounds 79/59/72) compared with fixed 100-round DP runs (patience 0). The corrected sweep runs epsilon=inf and all DP levels with the same seeds and patience 15."
+  ]
+}

@@ -1,13 +1,13 @@
 """
 experiments/evaluate_test.py — Final test-set evaluation.
 
-Run ONCE after all design decisions are final. Loads the best checkpoint
-per seed for each model and evaluates on the held-out test split.
+Run ONCE after all design decisions are final. Loads the best-validation
+checkpoint per seed for each model and evaluates on the held-out test split.
 Never call this during development or hyperparameter tuning.
 
 Models evaluated:
-  VFL-MTL             : checkpoints/best_seed{N}.pt
-  ST-IHM/Decomp/Pheno : checkpoints/best_ST-{name}_seed{N}.pt  (saved by run_exp1.py)
+  VFL-MTL             : checkpoints/bestmean_VFL-MTL_seed{N}.pt
+  ST-IHM/Decomp/Pheno : checkpoints/bestmean_ST-{name}_seed{N}.pt  (saved by run_exp1.py)
   local_A/B/C         : checkpoints/best_local_{site}_seed{N}.pt
   centralized_oracle  : checkpoints/best_centralized_seed{N}.pt
 
@@ -32,8 +32,9 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from experiment_config import BATCH_SIZE, SEEDS
 
-from data_prep.dataset import build_site_loaders
+from data_prep.dataset import build_site_loaders, check_same_stays
 from experiments.metrics import ihm_metrics, decomp_metrics, pheno_metrics
 from fl.client import VFLClient
 from fl.server import VFLServer
@@ -42,7 +43,6 @@ from baselines.local_only import _SITE_CFG, _LocalHead
 from baselines.centralized import CentralizedEncoder, CentralizedDataset, _collate, _EMBED_DIM
 from model.mmoe import MMoEServer
 
-SEEDS = [42, 123, 7]
 
 
 # ---------------------------------------------------------------------------
@@ -50,9 +50,8 @@ SEEDS = [42, 123, 7]
 # ---------------------------------------------------------------------------
 
 def _real_test_loaders(root: str, batch_size: int, num_workers: int = 0,
-                       max_seq_len: int = 48, align_stays: bool = False) -> dict:
-    return build_site_loaders(Path(root), "test", batch_size, num_workers, max_seq_len,
-                              align_stays=align_stays)
+                       max_seq_len: int = 48) -> dict:
+    return build_site_loaders(Path(root), "test", batch_size, num_workers, max_seq_len)
 
 
 def _synthetic_test_loaders(batch_size: int, seed: int) -> dict:
@@ -84,6 +83,7 @@ def _eval_vfl(clients, server, loaders) -> dict[str, float]:
     preds  = {"ihm": [], "decomp": [], "pheno": []}
     labels = {"ihm": [], "decomp": [], "pheno": []}
     for bA, bB, bC in zip(loaders["A"], loaders["B"], loaders["C"]):
+        check_same_stays(bA, bB, bC)
         xA, mA, yI = bA; xB, mB, yD = bB; xC, mC, yP = bC
         embs = {"A": clients["A"].eval_forward(xA, mA),
                 "B": clients["B"].eval_forward(xB, mB),
@@ -116,7 +116,7 @@ def eval_vfl_mtl(ckpt_dir: Path, loaders: dict,
     rows = []
     for model_name in ["VFL-MTL", "ST-IHM", "ST-Decomp", "ST-Pheno"]:
         for seed in SEEDS:
-            ckpt_path = ckpt_dir / f"best_{model_name}_seed{seed}.pt"
+            ckpt_path = ckpt_dir / f"bestmean_{model_name}_seed{seed}.pt"
             if not ckpt_path.exists():
                 print(f"  [SKIP] {ckpt_path.name} not found")
                 continue
@@ -286,9 +286,7 @@ def main():
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--root",         default=".")
     p.add_argument("--ckpt_dir",     default="checkpoints")
-    p.add_argument("--batch_size",   type=int, default=64)
-    p.add_argument("--align_stays", action="store_true",
-                   help="same ICU stay at the same row across sites (use for models trained with it)")
+    p.add_argument("--batch_size",   type=int, default=BATCH_SIZE)
     p.add_argument("--embed_dim",    type=int, default=64,
                    help="VFL-MTL per-site embed dim (must match training)")
     p.add_argument("--device",       default="cuda" if __import__("torch").cuda.is_available() else "cpu")
@@ -308,7 +306,7 @@ def main():
     if args.use_synthetic:
         site_loaders = _synthetic_test_loaders(args.batch_size, seed=42)
     else:
-        site_loaders = _real_test_loaders(args.root, args.batch_size, align_stays=args.align_stays)
+        site_loaders = _real_test_loaders(args.root, args.batch_size)
 
     all_rows: list[dict] = []
 

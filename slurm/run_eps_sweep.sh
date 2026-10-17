@@ -40,9 +40,8 @@ echo "[eps_sweep] Running epsilon=$EPS"
 
 python experiments/privacy_utility_curves.py \
     --splits_dir data/vertical_splits \
-    --epsilon $EPS \
+    --epsilon_levels $EPS \
     --output results/privacy_utility_combined.csv \
-    --device cuda \
-    --save_checkpoint
+    --device cuda
 
 echo "[eps_sweep] Done for epsilon=$EPS"
