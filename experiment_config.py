@@ -18,9 +18,21 @@ DELTA          = 1e-5
 EPSILON_LEVELS = [float("inf"), 10.0, 5.0, 2.0, 1.0, 0.5]
 
 
+_GIT = Path(__file__).resolve().parent / ".git"
+
+
+def git_branch() -> str:
+    """Checked-out branch read from .git/HEAD, without running git."""
+    try:
+        head = (_GIT / "HEAD").read_text().strip()
+    except OSError:
+        return "unknown"
+    return head.removeprefix("ref: refs/heads/") if head.startswith("ref: ") else "detached"
+
+
 def git_commit() -> str:
     """HEAD commit read from .git files, without running git."""
-    git = Path(__file__).resolve().parent / ".git"
+    git = _GIT
     try:
         head = (git / "HEAD").read_text().strip()
         if not head.startswith("ref: "):

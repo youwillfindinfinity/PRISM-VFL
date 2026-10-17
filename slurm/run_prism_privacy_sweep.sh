@@ -28,11 +28,11 @@ set -e
 OUT=results_revision/prism_privacy_sweep.csv
 CKPT=checkpoints_revision
 EXTRA=""
-# Real-data pre-flight: sbatch --time=02:00:00 slurm/run_prism_privacy_sweep.sh 2roundtest
+# Real-data pre-flight / T15 smoke test (seed 42): sbatch --time=01:00:00 slurm/run_prism_privacy_sweep.sh 2roundtest
 if [ "$1" = "2roundtest" ]; then
     OUT=smoke_tests/revision1/2roundtest_sweep.csv
     CKPT=smoke_tests/revision1/2roundtest_checkpoints
-    EXTRA="--n_rounds 2 --seeds 7"
+    EXTRA="--n_rounds 2 --seeds 42"
     rm -f $OUT   # the sweep resumes from an existing CSV; the test always starts clean
 fi
 

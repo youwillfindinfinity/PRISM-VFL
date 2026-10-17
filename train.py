@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import random
 import sys
@@ -47,7 +48,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from data_prep.dataset import SeededShuffle, build_site_loaders, check_same_stays
 from experiment_config import (
     BATCH_SIZE, CHECKPOINT_SELECTION, CLIPPING_NORM, DELTA, LEARNING_RATE, MAX_ROUNDS,
-    PATIENCE, TASK_WEIGHTS, git_commit,
+    PATIENCE, TASK_WEIGHTS, git_branch, git_commit,
 )
 from fl.client import VFLClient
 from fl.fedavg import fedavg_aggregate
@@ -474,13 +475,15 @@ def run_training(
 
     # Everything needed to reproduce this run, as one line in the job log (T13).
     print("[run_config] " + json.dumps({
-        "model_name": cfg.model_name, "seed": cfg.seed, "git_commit": git_commit(),
+        "model_name": cfg.model_name, "seed": cfg.seed,
+        "git_branch": git_branch(), "git_commit": git_commit(),
         "command": " ".join(sys.argv), "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "torch": torch.__version__, "device": str(device),
         "batch_size": cfg.batch_size, "learning_rate": cfg.lr, "max_rounds": cfg.n_rounds,
         "patience": cfg.patience, "task_weights": cfg.task_weights,
         "uncertainty_weighting": cfg.uncertainty_weighting,
         "aligned_ntrain": len(all_train[active_sites[0]].dataset),
+        "aligned_nval": len(all_val[active_sites[0]].dataset),
         "batches_per_round": len(train_loaders[active_sites[0]]),
         "dp": _dp_enabled, "clipping_norm": _max_grad_norm, "delta": _dp_delta if _dp_enabled else None,
         "sample_rate": _dp_sample_rate if _dp_enabled else None, "sigma_by_task": _dp_sigma_map or None,
@@ -556,6 +559,7 @@ def run_training(
             cfg.fedprox_mu, global_encoder_params,
             compute_grad_sim=_compute_grad_sim,
             grad_balance=cfg.grad_balance,
+            log_stay_hashes=(rnd == 0),
         )
 
         # ---- FedAvg ----
@@ -664,12 +668,19 @@ def run_training(
 _SITE_TASK = {"A": "ihm", "B": "decomp", "C": "pheno"}
 
 
+def _stay_hash(batch) -> str:
+    """Short hash of the batch's stay IDs (synthetic batches carry none)."""
+    stays = getattr(batch, "stays", None)
+    return hashlib.sha256("\n".join(stays).encode()).hexdigest()[:12] if stays else "n/a"
+
+
 def _train_one_round_sites(
     clients, server, loaders, active_sites,
     site_input_dims, all_dims,
     fedprox_mu, global_encoder_params,
     compute_grad_sim: bool = False,
     grad_balance: bool = False,
+    log_stay_hashes: bool = False,
 ) -> dict[str, float]:
     """train_one_round generalised to arbitrary active_sites with feature truncation."""
     task_loss_sums = {"ihm": 0.0, "decomp": 0.0, "pheno": 0.0}
@@ -683,6 +694,9 @@ def _train_one_round_sites(
     for batches in zip(*loader_iters):
         # batches is a tuple of (x, mask, y) per site in active_sites order
         check_same_stays(*batches)
+        if log_stay_hashes and n_batches < 3:
+            print(f"[stay_hashes] batch {n_batches + 1}: " + "  ".join(
+                f"{s}={_stay_hash(b)}" for s, b in zip(active_sites, batches)))
         embeddings = {}
         labels = {}
         for site, (x, mask, y) in zip(active_sites, batches):
