@@ -40,7 +40,6 @@ from attacks.label_inference import (
     _load_weights,
     _extract_embeddings,
     run_label_inference,
-    _ckpt_path,
 )
 
 ABL2_EPS       = 5.0
@@ -167,6 +166,7 @@ def run_abl2(
                 use_synthetic=args.use_synthetic,
                 n_synthetic=args.n_synthetic,
                 patience=args.patience,
+                ckpt_dir=args.ckpt_dir,
                 model_name=model_name,
                 uncertainty_weighting=False,  # single σ per task; no log_var params needed
                 grad_sim_every=5,             # capture ρ every 5 rounds
@@ -263,6 +263,7 @@ def run_abl3(
                     use_synthetic=args.use_synthetic,
                     n_synthetic=args.n_synthetic,
                     patience=args.patience,
+                    ckpt_dir=args.ckpt_dir,
                     model_name=model_name,
                     embed_dim=embed_dim,
                     privacy_config=privacy_cfg,

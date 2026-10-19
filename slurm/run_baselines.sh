@@ -17,6 +17,9 @@ cd "$SLURM_SUBMIT_DIR"
 
 pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/null
 
-python experiments/run_baselines.py
+python experiments/run_baselines.py \
+    --ckpt_dir checkpoints_revision \
+    --local_a results_revision/local_only_A.csv --local_b results_revision/local_only_B.csv --local_c results_revision/local_only_C.csv \
+    --central results_revision/centralized.csv --output results_revision/baselines_comparison.csv
 
 echo "[baselines] Done."

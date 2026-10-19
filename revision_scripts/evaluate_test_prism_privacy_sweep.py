@@ -21,7 +21,7 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiment_config import BATCH_SIZE
+from experiment_config import BATCH_SIZE, checkpoint_path, prism_model_name
 from train import _evaluate_sites, make_synthetic_loaders
 from data_prep.dataset import build_site_loaders
 from fl.client import VFLClient
@@ -36,7 +36,7 @@ METRICS = ["ihm_auroc", "ihm_auprc", "decomp_auroc", "decomp_auprc", "pheno_macr
 def _model_name(run) -> str:
     """Same names as run_prism_privacy_sweep.py."""
     if run.arm == "PRISM":
-        return f"PRISM-{run.weighting}-eps{run.epsilon_level}-seed{run.seed}"
+        return prism_model_name(run.weighting, run.epsilon_level, run.seed)
     return f"{run.arm}-seed{run.seed}"
 
 
@@ -76,7 +76,7 @@ def main() -> None:
     rows = []
     for run in runs.itertuples(index=False):
         name = _model_name(run)
-        ckpt = torch.load(Path(args.ckpt_dir) / f"bestmean_{name}_seed{run.seed}.pt",
+        ckpt = torch.load(checkpoint_path(args.ckpt_dir, name, run.seed),
                           weights_only=True, map_location=args.device)
         assert int(ckpt["round"]) == int(run.best_round), (
             f"{name}: checkpoint is from round {ckpt['round']}, sweep CSV says best_round="

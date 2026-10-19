@@ -6,8 +6,8 @@ checkpoint per seed for each model and evaluates on the held-out test split.
 Never call this during development or hyperparameter tuning.
 
 Models evaluated:
-  VFL-MTL             : checkpoints/bestmean_VFL-MTL_seed{N}.pt
-  ST-IHM/Decomp/Pheno : checkpoints/bestmean_ST-{name}_seed{N}.pt  (saved by run_exp1.py)
+  VFL-MTL             : revision-sweep PRISM at epsilon = inf (experiment_config.nodp_model_name)
+  ST-IHM/Decomp/Pheno : revision-sweep single-task baselines
   local_A/B/C         : checkpoints/best_local_{site}_seed{N}.pt
   centralized_oracle  : checkpoints/best_centralized_seed{N}.pt
 
@@ -32,7 +32,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiment_config import BATCH_SIZE, SEEDS
+from experiment_config import BATCH_SIZE, SEEDS, checkpoint_path, nodp_model_name
 
 from data_prep.dataset import build_site_loaders, check_same_stays
 from experiments.metrics import ihm_metrics, decomp_metrics, pheno_metrics
@@ -116,7 +116,7 @@ def eval_vfl_mtl(ckpt_dir: Path, loaders: dict,
     rows = []
     for model_name in ["VFL-MTL", "ST-IHM", "ST-Decomp", "ST-Pheno"]:
         for seed in SEEDS:
-            ckpt_path = ckpt_dir / f"bestmean_{model_name}_seed{seed}.pt"
+            ckpt_path = checkpoint_path(ckpt_dir, nodp_model_name(model_name, seed), seed)
             if not ckpt_path.exists():
                 print(f"  [SKIP] {ckpt_path.name} not found")
                 continue

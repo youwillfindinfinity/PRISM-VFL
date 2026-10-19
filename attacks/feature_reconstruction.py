@@ -45,6 +45,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from experiment_config import DP_COMBOS, SEEDS, checkpoint_path, dp_model_name
 from fl.client import VFLClient
 
 # ---------------------------------------------------------------------------
@@ -63,8 +64,6 @@ SITE_A_FEATURES = [
 
 EMBED_DIM    = 64
 SITE_A_INPUT = 7
-
-DEFAULT_EPSILON_LEVELS = ["inf", "10", "5", "2", "1", "0.5"]
 
 
 # ---------------------------------------------------------------------------
@@ -91,20 +90,6 @@ class FeatureDecoder(nn.Module):
 # ---------------------------------------------------------------------------
 # Checkpoint helpers  (mirrors attacks/label_inference.py)
 # ---------------------------------------------------------------------------
-
-def _ckpt_path(ckpt_dir: str, eps_label: str, seed: int) -> Path:
-    """
-    Resolve checkpoint path for a given epsilon level and seed.
-
-    Rules (consistent with label_inference.py):
-      - eps="inf"    → bestmean_VFL-MTL_seed{seed}.pt
-      - eps=other    → bestmean_DP-uniform-eps{eps}-seed{seed}_seed{seed}.pt
-    """
-    base = Path(ckpt_dir)
-    if str(eps_label) == "inf":
-        return base / f"bestmean_VFL-MTL_seed{seed}.pt"
-    return base / f"bestmean_DP-uniform-eps{eps_label}-seed{seed}_seed{seed}.pt"
-
 
 def _load_site_a_encoder(ckpt_path: Path, device: torch.device) -> VFLClient:
     """Build a VFLClient for Site A and load weights from checkpoint."""
@@ -268,7 +253,7 @@ def _run_one_epsilon(
     print(f"\n[feat_recon] ε={eps_label} | seed={seed}")
 
     # ---- Load checkpoint ----
-    ckpt = _ckpt_path(ckpt_dir, eps_label, seed)
+    ckpt = checkpoint_path(ckpt_dir, dp_model_name(eps_label, "uniform", seed), seed)
     if not ckpt.exists():
         print(f"  WARNING: {ckpt.name} not found — skipping.")
         return None
@@ -338,7 +323,7 @@ def main() -> None:
     parser.add_argument(
         "--epsilon_levels",
         nargs="+",
-        default=DEFAULT_EPSILON_LEVELS,
+        default=[e for e, mode in DP_COMBOS if mode == "uniform"],
         help="Epsilon levels to evaluate (use 'inf' for no-DP baseline).",
     )
     parser.add_argument(
@@ -346,7 +331,6 @@ def main() -> None:
         default="results/feature_reconstruction.csv",
         help="Path for output CSV.",
     )
-    parser.add_argument("--seed",       type=int,   default=42)
     parser.add_argument("--n_epochs",   type=int,   default=50,
                         help="Training epochs for the MLP decoder.")
     parser.add_argument("--batch_size", type=int,   default=128)
@@ -359,24 +343,25 @@ def main() -> None:
     args = parser.parse_args()
 
     device = torch.device(args.device)
-    print(f"[feat_recon] device={device} | seed={args.seed}")
+    print(f"[feat_recon] device={device} | seeds={SEEDS}")
     print(f"[feat_recon] epsilon_levels={args.epsilon_levels}")
 
     all_rows: list[dict] = []
 
-    for eps in args.epsilon_levels:
-        rows = _run_one_epsilon(
-            eps_label  = str(eps),
-            seed       = args.seed,
-            ckpt_dir   = args.ckpt_dir,
-            splits_dir = args.splits_dir,
-            n_epochs   = args.n_epochs,
-            batch_size = args.batch_size,
-            lr         = args.lr,
-            device     = device,
-        )
-        if rows is not None:
-            all_rows.extend(rows)
+    for seed in SEEDS:
+        for eps in args.epsilon_levels:
+            rows = _run_one_epsilon(
+                eps_label  = str(eps),
+                seed       = seed,
+                ckpt_dir   = args.ckpt_dir,
+                splits_dir = args.splits_dir,
+                n_epochs   = args.n_epochs,
+                batch_size = args.batch_size,
+                lr         = args.lr,
+                device     = device,
+            )
+            if rows is not None:
+                all_rows.extend(rows)
 
     if not all_rows:
         print("[feat_recon] No results collected — all checkpoints missing?")

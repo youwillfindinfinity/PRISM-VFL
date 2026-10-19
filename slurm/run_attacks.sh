@@ -22,18 +22,17 @@ pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/nul
 
 python attacks/label_inference.py \
     --splits_dir data/vertical_splits \
-    --ckpt_dir checkpoints \
-    --output results/label_inference.csv
+    --ckpt_dir checkpoints_revision \
+    --output results_revision/label_inference.csv
 
 python attacks/embedding_mia.py \
     --splits_dir data/vertical_splits \
-    --ckpt_dir checkpoints \
-    --output results/embedding_mia.csv
+    --ckpt_dir checkpoints_revision \
+    --output results_revision/embedding_mia.csv
 
 python attacks/feature_reconstruction.py \
     --splits_dir data/vertical_splits \
-    --ckpt_dir checkpoints \
-    --output results/feature_reconstruction.csv \
-    --seed 42
+    --ckpt_dir checkpoints_revision \
+    --output results_revision/feature_reconstruction.csv
 
 echo "[attacks] Done."

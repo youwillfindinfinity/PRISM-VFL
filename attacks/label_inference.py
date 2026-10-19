@@ -15,9 +15,9 @@ Metrics:
   - IHM: accuracy + AUC-ROC  (target under sufficient DP: accuracy ≈ prevalence ~10%)
   - Pheno: macro-AUC across 25 labels (target: ≈ 0.50)
 
-For each (epsilon_level, mode, seed) in results/privacy_utility_combined.csv:
+For each (epsilon_level, mode, seed) in DP_COMBOS x SEEDS (experiment_config.py):
   1. Reconstruct model from TrainConfig defaults
-  2. Load checkpoint from checkpoints/ (falls back to fresh model if absent)
+  2. Load the sweep's checkpoint from --ckpt_dir (falls back to fresh model if absent)
   3. Extract train + test embeddings via VFLClient.eval_forward()
   4. Fit LogisticRegression probe; report metrics on test set
 
@@ -26,7 +26,7 @@ Output: results/label_inference.csv
 
 Usage
 -----
-  python attacks/label_inference.py --use_synthetic --n_rounds 3
+  python attacks/label_inference.py --use_synthetic
   python attacks/label_inference.py --splits_dir data/vertical_splits
 """
 
@@ -45,7 +45,7 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import label_binarize
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiment_config import BATCH_SIZE, EPSILON_LEVELS as CONFIG_EPSILON_LEVELS, SEEDS
+from experiment_config import BATCH_SIZE, DP_COMBOS, SEEDS, checkpoint_path, dp_model_name
 
 from fl.client import VFLClient
 from fl.server import VFLServer
@@ -56,7 +56,6 @@ from train import make_synthetic_loaders
 # Constants matching privacy_utility_curves.py
 # ---------------------------------------------------------------------------
 
-EPSILON_LEVELS = [str(e) for e in CONFIG_EPSILON_LEVELS]
 EMBED_DIM     = 64
 SITE_INPUT_DIMS = {"A": 7, "B": 4, "C": 3}
 
@@ -64,16 +63,6 @@ SITE_INPUT_DIMS = {"A": 7, "B": 4, "C": 3}
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _ckpt_path(ckpt_dir: str, eps_label: str, mode: str, seed: int) -> Path:
-    if str(eps_label) == "inf":
-        return Path(ckpt_dir) / f"bestmean_VFL-MTL_seed{seed}.pt"
-    if mode == "stratified":
-        model_name = f"DP-stratified-eps5-seed{seed}"
-    else:
-        model_name = f"DP-uniform-eps{eps_label}-seed{seed}"
-    return Path(ckpt_dir) / f"bestmean_{model_name}_seed{seed}.pt"
-
 
 def _build_clients_and_server(device: torch.device) -> tuple[dict, VFLServer]:
     clients = {
@@ -214,7 +203,7 @@ def _run_one(
     clients, server = _build_clients_and_server(device)
 
     # Load checkpoint when available (weights only — no optimizer state needed)
-    ckpt = _ckpt_path(ckpt_dir, eps_label, mode, seed)
+    ckpt = checkpoint_path(ckpt_dir, dp_model_name(eps_label, mode, seed), seed)
     if ckpt.exists():
         _load_weights(ckpt, clients, server)
     elif not use_synthetic:
@@ -251,13 +240,9 @@ def main() -> None:
     )
     parser.add_argument("--splits_dir",    default="data/vertical_splits")
     parser.add_argument("--ckpt_dir",      default="checkpoints")
-    parser.add_argument("--privacy_csv",   default="results/privacy_utility_combined.csv",
-                        help="CSV from privacy_utility_curves.py — used to discover (ε, mode) combos")
     parser.add_argument("--output",        default="results/label_inference.csv")
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
-    parser.add_argument("--n_rounds",      type=int, default=50,
-                        help="Used only for checkpoint path reconstruction")
     parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--max_seq_len",   type=int, default=48)
     parser.add_argument("--split",         default="test", choices=["val", "test"],
@@ -267,22 +252,10 @@ def main() -> None:
 
     device = torch.device(args.device)
 
-    # Determine (epsilon_level, mode) combos from CSV or defaults
-    combos: list[tuple[str, str]] = []
-    privacy_csv = Path(args.privacy_csv)
-    if privacy_csv.exists():
-        import pandas as pd
-        df = pd.read_csv(privacy_csv)
-        combos = list(df[["epsilon_level", "mode"]].drop_duplicates().itertuples(index=False, name=None))
-        print(f"[label_inference] {len(combos)} (ε, mode) combos from {privacy_csv}")
-    else:
-        combos = [(eps, "uniform") for eps in EPSILON_LEVELS] + [("5.0", "stratified")]
-        print(f"[label_inference] privacy_utility_combined.csv not found; using defaults ({len(combos)} combos)")
-
     all_rows: list[dict] = []
     n_val_batches = max(1, args.n_synthetic // args.batch_size // 4)
 
-    for eps_label, mode in combos:
+    for eps_label, mode in DP_COMBOS:
         for seed in SEEDS:
             print(f"  ε={eps_label} | mode={mode} | seed={seed}")
             try:

@@ -30,7 +30,9 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiment_config import BATCH_SIZE, EPSILON_LEVELS, MAX_ROUNDS, PATIENCE, SWEEP_SEEDS as SEEDS
+from experiment_config import (
+    BATCH_SIZE, EPSILON_LEVELS, MAX_ROUNDS, PATIENCE, SEEDS, dp_model_name, nodp_model_name, prism_model_name,
+)
 from train import run_training, TrainConfig
 from data_prep.dataset import build_site_loaders
 from experiments.run_exp1 import CONFIGS as ST_CONFIGS
@@ -137,13 +139,13 @@ def main() -> None:
 
         # Arm 1 — PRISM, equal weighting, full grid
         for eps in EPSILON_LEVELS:
-            name = f"PRISM-equal-eps{_epsilon_label(eps)}-seed{seed}"
+            name = dp_model_name(_epsilon_label(eps), "uniform", seed)
             seed_rows += _run(name, "PRISM", eps, "equal", False,
                                {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0}, _uniform_cfg(eps))
 
         # Arm 2 — PRISM, uncertainty weighting, ablation eps only
         for eps in ABLATION_EPS:
-            name = f"PRISM-uncertainty-eps{_epsilon_label(eps)}-seed{seed}"
+            name = prism_model_name("uncertainty", _epsilon_label(eps), seed)
             seed_rows += _run(name, "PRISM", eps, "uncertainty", True,
                                {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0}, _uniform_cfg(eps))
 
@@ -151,12 +153,12 @@ def main() -> None:
         for st_name, st_cfg in ST_CONFIGS.items():
             if st_name == "VFL-MTL":
                 continue
-            seed_rows += _run(f"{st_name}-seed{seed}", st_name, float("inf"), "n/a",
+            seed_rows += _run(nodp_model_name(st_name, seed), st_name, float("inf"), "n/a",
                                False, st_cfg["task_weights"], _uniform_cfg(float("inf")))
 
         # Arm 4 — PRISM, equal weighting, task-stratified DP (total eps 5 = 2 + 2 + 1)
         strat_sigma = {t: _compute_sigma(e, sample_rate, args.n_rounds) for t, e in STRATIFIED_EPS.items()}
-        seed_rows += _run(f"PRISM-stratified-seed{seed}", "PRISM-stratified", 5.0, "equal", False,
+        seed_rows += _run(dp_model_name("5.0", "stratified", seed), "PRISM-stratified", 5.0, "equal", False,
                            {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0},
                            _build_stratified_privacy_config(strat_sigma))
 

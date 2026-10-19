@@ -23,7 +23,8 @@ pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/nul
 
 python experiments/run_exp3.py \
     --splits_dir data/vertical_splits \
-    --output results/exp3.csv \
+    --output results_revision/exp3.csv \
+    --ckpt_dir checkpoints_revision \
     --device cuda
 
-echo "[exp3] Done. Results in results/exp3.csv"
+echo "[exp3] Done. Results in results_revision/exp3.csv"

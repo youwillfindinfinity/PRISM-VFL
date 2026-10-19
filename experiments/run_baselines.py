@@ -250,9 +250,10 @@ def main():
     p.add_argument("--local_b",      default="results/local_only_B.csv")
     p.add_argument("--local_c",      default="results/local_only_C.csv")
     p.add_argument("--central",      default="results/centralized.csv")
-    p.add_argument("--vfl_results",  default="results/exp1.csv",
-                   help="Path to exp1.csv produced by run_exp1.py")
+    p.add_argument("--vfl_results",  default=None,
+                   help="Optional exp1-style CSV; its VFL-MTL rows are added to the comparison")
     p.add_argument("--output",       default="results/baselines_comparison.csv")
+    p.add_argument("--ckpt_dir",     default="checkpoints")
     args = p.parse_args()
 
     all_rows: list[dict] = []
@@ -279,24 +280,20 @@ def main():
             for seed in SEEDS:
                 store.extend(train_local(site, root=args.root, n_epochs=args.n_epochs,
                                          lr=1e-3, batch_size=args.batch_size,
-                                         seed=seed, use_synthetic=False))
+                                         seed=seed, use_synthetic=False, ckpt_dir=args.ckpt_dir))
         for seed in SEEDS:
             cent.extend(train_centralized(root=args.root, n_epochs=args.n_epochs,
                                           lr=1e-3, batch_size=args.batch_size,
-                                          seed=seed, use_synthetic=False))
+                                          seed=seed, use_synthetic=False, ckpt_dir=args.ckpt_dir))
         all_rows.extend(_rows_to_final_per_seed(la,   "local_A",            "A"))
         all_rows.extend(_rows_to_final_per_seed(lb,   "local_B",            "B"))
         all_rows.extend(_rows_to_final_per_seed(lc,   "local_C",            "C"))
         all_rows.extend(_rows_to_final_per_seed(cent, "centralized_oracle", "central"))
 
     # ── VFL-MTL ───────────────────────────────────────────────────────────────
-    vfl_path = Path(args.vfl_results)
-    if vfl_path.exists():
-        print(f"Loading VFL-MTL results from {vfl_path}...")
-        all_rows.extend(_extract_vfl_mtl(str(vfl_path)))
-    else:
-        print(f"[WARNING] {vfl_path} not found — run experiments/run_exp1.py first. "
-              "VFL-MTL rows will be absent from the output.")
+    if args.vfl_results:
+        print(f"Loading VFL-MTL results from {args.vfl_results}...")
+        all_rows.extend(_extract_vfl_mtl(args.vfl_results))
 
     # ── Output ────────────────────────────────────────────────────────────────
     _print_summary(all_rows)

@@ -29,8 +29,9 @@ echo "[pcmu_factorial] Running embed_dim=$EMBED_DIM"
 python experiments/run_factorial_pcmu.py \
     --splits_dir data/vertical_splits \
     --embed_dim $EMBED_DIM \
-    --out_summary results/pcmu_phase2_factorial.csv \
-    --out_rounds results/pcmu_phase2_factorial_rounds.csv \
+    --out_summary results_revision/pcmu_phase2_factorial.csv \
+    --out_rounds results_revision/pcmu_phase2_factorial_rounds.csv \
+    --ckpt_dir checkpoints_revision \
     --device cuda
 
 echo "[pcmu_factorial] Done for embed_dim=$EMBED_DIM"

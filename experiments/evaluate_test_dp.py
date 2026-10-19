@@ -9,12 +9,8 @@ For each checkpoint:
   2. Label inference attack: LR probe fitted on TRAIN embeddings, tested on TEST
   3. MIA: binary classifier trained on TRAIN (members) vs TEST (non-members)
 
-Checkpoints follow naming convention:
-  uniform    → checkpoints/bestmean_DP-uniform-eps{label}-seed{N}_seed{N}.pt
-  stratified → checkpoints/bestmean_DP-stratified-eps5-seed{N}_seed{N}.pt
-
-(ε_level, mode) combinations are read from results/privacy_utility_combined.csv.
-If that file does not exist, defaults to all EPSILON_LEVELS × ["uniform"] + ("5.0", "stratified").
+Checkpoints and (ε_level, mode) combinations: the revision sweep's equal-weight DP runs
+(DP_COMBOS in experiment_config.py; checkpoint names from dp_model_name).
 
 Output: results/test_results_dp.csv
   columns: epsilon_level, mode, seed,
@@ -48,7 +44,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.multiclass import OneVsRestClassifier
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiment_config import BATCH_SIZE, EPSILON_LEVELS as CONFIG_EPSILON_LEVELS, SEEDS
+from experiment_config import BATCH_SIZE, DP_COMBOS, SEEDS, checkpoint_path, dp_model_name
 
 from data_prep.dataset import build_site_loaders, check_same_stays
 from experiments.metrics import ihm_metrics, decomp_metrics, pheno_metrics
@@ -60,23 +56,8 @@ from train import make_synthetic_loaders
 # Constants
 # ---------------------------------------------------------------------------
 
-EPSILON_LEVELS = [str(e) for e in CONFIG_EPSILON_LEVELS]
 EMBED_DIM      = 64
 SITE_INPUT_DIMS: dict[str, int] = {"A": 7, "B": 4, "C": 3}
-
-
-# ---------------------------------------------------------------------------
-# Checkpoint path
-# ---------------------------------------------------------------------------
-
-def _ckpt_path(ckpt_dir: Path, eps_label: str, mode: str, seed: int) -> Path:
-    if str(eps_label) == "inf":
-        return ckpt_dir / f"bestmean_VFL-MTL_seed{seed}.pt"
-    if mode == "stratified":
-        name = f"DP-stratified-eps5-seed{seed}"
-    else:
-        name = f"DP-uniform-eps{eps_label}-seed{seed}"
-    return ckpt_dir / f"bestmean_{name}_seed{seed}.pt"
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +276,7 @@ def _run_one(
 ) -> dict:
     torch.manual_seed(seed)
     clients, server = _build_model(device)
-    ckpt = _ckpt_path(ckpt_dir, eps_label, mode, seed)
+    ckpt = checkpoint_path(ckpt_dir, dp_model_name(eps_label, mode, seed), seed)
     found = _load_weights(ckpt, clients, server, device)
     if not found:
         print(f"    [WARNING] checkpoint not found: {ckpt.name}")
@@ -339,8 +320,6 @@ def main() -> None:
     )
     parser.add_argument("--splits_dir",    default="data/vertical_splits")
     parser.add_argument("--ckpt_dir",      default="checkpoints")
-    parser.add_argument("--privacy_csv",   default="results/privacy_utility_combined.csv",
-                        help="Used to discover (ε_level, mode) combinations. Falls back to defaults.")
     parser.add_argument("--output",        default="results/test_results_dp.csv")
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
@@ -357,20 +336,6 @@ def main() -> None:
 
     device   = torch.device(args.device)
     ckpt_dir = Path(args.ckpt_dir)
-
-    # (ε, mode) combinations to evaluate
-    combos: list[tuple[str, str]] = []
-    pcsv = Path(args.privacy_csv)
-    if pcsv.exists():
-        import pandas as pd
-        df = pd.read_csv(pcsv)
-        combos = list(
-            df[["epsilon_level", "mode"]].drop_duplicates().itertuples(index=False, name=None)
-        )
-        print(f"[evaluate_test_dp] {len(combos)} (ε, mode) combos from {pcsv}")
-    else:
-        combos = [(eps, "uniform") for eps in EPSILON_LEVELS] + [("5.0", "stratified")]
-        print(f"[evaluate_test_dp] privacy_utility_combined.csv not found; using {len(combos)} defaults")
 
     # Data loaders — built once, reused across all (ε, mode, seed) combos
     if args.use_synthetic:
@@ -392,7 +357,7 @@ def main() -> None:
 
     # Evaluate
     all_rows: list[dict] = []
-    for eps_label, mode in combos:
+    for eps_label, mode in DP_COMBOS:
         for seed in SEEDS:
             print(f"  ε={eps_label} | mode={mode} | seed={seed}", end=" ... ", flush=True)
             try:

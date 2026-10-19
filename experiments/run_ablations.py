@@ -92,6 +92,7 @@ def main():
     parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--device",        default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     parser.add_argument("--output",        default="results/ablations.csv")
+    parser.add_argument("--ckpt_dir",      default="checkpoints")
     parser.add_argument("--use_synthetic", action="store_true")
     parser.add_argument("--n_synthetic",   type=int, default=256)
     parser.add_argument("--patience",      type=int, default=PATIENCE)
@@ -123,6 +124,7 @@ def main():
                 n_synthetic=args.n_synthetic,
                 model_name=model_name,
                 patience=args.patience,
+                ckpt_dir=args.ckpt_dir,
                 **model_cfg,
             )
             results = run_training(cfg, prebuilt_loaders=prebuilt)

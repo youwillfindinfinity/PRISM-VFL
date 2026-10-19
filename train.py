@@ -48,7 +48,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from data_prep.dataset import SeededShuffle, build_site_loaders, check_same_stays
 from experiment_config import (
     BATCH_SIZE, CHECKPOINT_SELECTION, CLIPPING_NORM, DELTA, LEARNING_RATE, MAX_ROUNDS,
-    PATIENCE, TASK_WEIGHTS, git_branch, git_commit,
+    PATIENCE, TASK_WEIGHTS, checkpoint_path, git_branch, git_commit,
 )
 from fl.client import VFLClient
 from fl.fedavg import fedavg_aggregate
@@ -648,7 +648,7 @@ def run_training(
                         best_round = rnd + 1
                         no_improve = 0
                         save_checkpoint(
-                            ckpt_dir / f"bestmean_{cfg.model_name}_seed{cfg.seed}.pt",
+                            checkpoint_path(ckpt_dir, cfg.model_name, cfg.seed),
                             rnd + 1, clients, server,
                         )
                     else:

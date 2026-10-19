@@ -52,6 +52,7 @@ def main():
     parser.add_argument("--batch_size",    type=int, default=BATCH_SIZE)
     parser.add_argument("--device",        default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     parser.add_argument("--output",        default="results/exp3.csv")
+    parser.add_argument("--ckpt_dir",      default="checkpoints")
     parser.add_argument("--use_synthetic", action="store_true",
                         help="Use random synthetic data (smoke test, no real data needed)")
     parser.add_argument("--n_synthetic",   type=int, default=256)
@@ -100,6 +101,7 @@ def main():
                 use_synthetic=args.use_synthetic,
                 n_synthetic=args.n_synthetic,
                 patience=args.patience,
+                ckpt_dir=args.ckpt_dir,
             )
             results = run_training(cfg, prebuilt_loaders=prebuilt_by_nsites[n_sites])
             losses = [r["train_loss"] for r in results]

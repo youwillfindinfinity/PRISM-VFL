@@ -32,7 +32,9 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiment_config import BATCH_SIZE, SEEDS
+from experiment_config import (
+    BATCH_SIZE, DP_COMBOS, SEEDS, checkpoint_path, dp_model_name, nodp_model_name,
+)
 
 from data_prep.dataset import build_site_loaders, check_same_stays
 from fl.client import VFLClient
@@ -46,8 +48,6 @@ from model.mmoe import MMoEServer
 NODP_IHM_MODELS   = ["local_A", "ST-IHM",    "VFL-MTL", "centralized_oracle"]
 NODP_DECOMP_MODELS= ["local_B", "ST-Decomp",  "VFL-MTL", "centralized_oracle"]
 
-DP_EPS    = [0.5, 1.0, 2.0, 5.0, 10.0, float("inf")]
-DP_MODES  = ["uniform", "stratified"]
 
 
 # ── shared inference helpers ─────────────────────────────────────────────────
@@ -140,16 +140,6 @@ def _run_centralized(ckpt_path: Path, root: str, batch_size: int, device: str
     }
 
 
-# ── DP checkpoint name helper ─────────────────────────────────────────────────
-
-def _dp_ckpt_name(eps: float, mode: str, seed: int) -> str:
-    if not np.isfinite(eps):
-        return f"bestmean_VFL-MTL_seed{seed}.pt"
-    # uniform checkpoints saved as eps1.0, eps2.0 ... ; stratified as eps5 (no decimal)
-    eps_str = str(int(eps)) if mode == "stratified" else str(float(eps))
-    return f"bestmean_DP-{mode}-eps{eps_str}-seed{seed}_seed{seed}.pt"
-
-
 # ── writers ───────────────────────────────────────────────────────────────────
 
 def _write_rows_nodp(writer, model: str, seed: int,
@@ -184,7 +174,7 @@ def run_nodp(args):
 
         for model_name in ["VFL-MTL", "ST-IHM", "ST-Decomp"]:
             for seed in SEEDS:
-                ckpt = ckpt_dir / f"bestmean_{model_name}_seed{seed}.pt"
+                ckpt = checkpoint_path(ckpt_dir, nodp_model_name(model_name, seed), seed)
                 if not ckpt.exists():
                     print(f"  [SKIP] {ckpt.name}"); continue
                 clients, server = _load_vfl_ckpt(ckpt, args.device)
@@ -230,18 +220,15 @@ def run_dp(args):
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
 
-        for eps in DP_EPS:
-            for mode in DP_MODES:
-                if not np.isfinite(eps) and mode == "stratified":
-                    continue   # ε=∞ has no stratified variant
-                for seed in SEEDS:
-                    ckpt = ckpt_dir / _dp_ckpt_name(eps, mode, seed)
-                    if not ckpt.exists():
-                        print(f"  [SKIP] {ckpt.name}"); continue
-                    clients, server = _load_vfl_ckpt(ckpt, args.device)
-                    preds = _run_vfl(clients, server, loaders)
-                    _write_rows_dp(writer, eps, mode, seed, preds)
-                    print(f"  saved eps={eps} {mode} seed={seed}")
+        for eps_label, mode in DP_COMBOS:
+            for seed in SEEDS:
+                ckpt = checkpoint_path(ckpt_dir, dp_model_name(eps_label, mode, seed), seed)
+                if not ckpt.exists():
+                    print(f"  [SKIP] {ckpt.name}"); continue
+                clients, server = _load_vfl_ckpt(ckpt, args.device)
+                preds = _run_vfl(clients, server, loaders)
+                _write_rows_dp(writer, float(eps_label), mode, seed, preds)
+                print(f"  saved eps={eps_label} {mode} seed={seed}")
 
     print(f"\nPredictions → {out}")
 
