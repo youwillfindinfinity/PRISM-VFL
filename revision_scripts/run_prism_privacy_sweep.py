@@ -9,6 +9,7 @@ Arms per seed:
   1. PRISM, equal weighting, full epsilon grid            -> weighting="equal"
   2. PRISM, uncertainty weighting, eps in ABLATION_EPS     -> weighting="uncertainty"
   3. ST-IHM / ST-Decomp / ST-Pheno, eps=inf only           -> weighting="n/a"
+  4. PRISM, equal weighting, task-stratified DP (per-task eps 2/2/1) -> arm="PRISM-stratified"
 
 Usage:
     python revision_scripts/run_prism_privacy_sweep.py --use_synthetic --n_rounds 3 \
@@ -34,7 +35,8 @@ from train import run_training, TrainConfig
 from data_prep.dataset import build_site_loaders
 from experiments.run_exp1 import CONFIGS as ST_CONFIGS
 from experiments.privacy_utility_curves import (
-    _compute_sigma, _build_uniform_privacy_config, _epsilon_label,
+    STRATIFIED_EPS, _compute_sigma, _build_uniform_privacy_config,
+    _build_stratified_privacy_config, _epsilon_label,
 )
 
 ABLATION_EPS = [float("inf"), 5.0]   # uncertainty-weighting side experiment only here
@@ -117,9 +119,11 @@ def main() -> None:
             }
             sample_rate = 1.0 / max(len(prebuilt["train"]["A"]), 1)
 
-        def _run(model_name, arm, eps, weighting, uncertainty_weighting, task_weights):
+        def _uniform_cfg(eps):
             sigma = _compute_sigma(eps, sample_rate, args.n_rounds) if math.isfinite(eps) else None
-            privacy_cfg = _build_uniform_privacy_config(sigma)
+            return _build_uniform_privacy_config(sigma)
+
+        def _run(model_name, arm, eps, weighting, uncertainty_weighting, task_weights, privacy_cfg):
             cfg = TrainConfig(
                 seed=seed, model_name=model_name, task_weights=task_weights,
                 uncertainty_weighting=uncertainty_weighting, privacy_config=privacy_cfg,
@@ -135,20 +139,26 @@ def main() -> None:
         for eps in EPSILON_LEVELS:
             name = f"PRISM-equal-eps{_epsilon_label(eps)}-seed{seed}"
             seed_rows += _run(name, "PRISM", eps, "equal", False,
-                               {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0})
+                               {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0}, _uniform_cfg(eps))
 
         # Arm 2 — PRISM, uncertainty weighting, ablation eps only
         for eps in ABLATION_EPS:
             name = f"PRISM-uncertainty-eps{_epsilon_label(eps)}-seed{seed}"
             seed_rows += _run(name, "PRISM", eps, "uncertainty", True,
-                               {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0})
+                               {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0}, _uniform_cfg(eps))
 
         # Arm 3 — single-task baselines, eps=inf only, never under DP
         for st_name, st_cfg in ST_CONFIGS.items():
             if st_name == "VFL-MTL":
                 continue
             seed_rows += _run(f"{st_name}-seed{seed}", st_name, float("inf"), "n/a",
-                               False, st_cfg["task_weights"])
+                               False, st_cfg["task_weights"], _uniform_cfg(float("inf")))
+
+        # Arm 4 — PRISM, equal weighting, task-stratified DP (total eps 5 = 2 + 2 + 1)
+        strat_sigma = {t: _compute_sigma(e, sample_rate, args.n_rounds) for t, e in STRATIFIED_EPS.items()}
+        seed_rows += _run(f"PRISM-stratified-seed{seed}", "PRISM-stratified", 5.0, "equal", False,
+                           {"ihm": 1.0, "decomp": 1.0, "pheno": 1.0},
+                           _build_stratified_privacy_config(strat_sigma))
 
         # Write this seed's rows immediately — a crash later only loses the
         # in-progress seed, not the whole run.
