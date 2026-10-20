@@ -180,6 +180,8 @@ def run_cell(
         batch_size=args.batch_size,
         grad_sim_every=1,
         ckpt_dir=args.ckpt_dir,
+        # Unique per cell, so PCMU never overwrites another experiment's bestmean_VFL-MTL checkpoints.
+        model_name=f"pcmu_embed{embed_dim}_eps{eps if math.isfinite(eps) else 'inf'}_{task_config}",
     )
 
     label = (
