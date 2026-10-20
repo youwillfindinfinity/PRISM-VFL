@@ -1,0 +1,50 @@
+{
+  "task": "T15_SMOKE_TEST_E1_ONE_SEED",
+  "status": "PASS",
+  "job": {
+    "slurm_job_id": 28225642,
+    "command": "sbatch --time=01:00:00 slurm/run_prism_privacy_sweep.sh 2roundtest (submitted from ~/PRISM-VFL on Snellius)",
+    "state": "COMPLETED, exit code 0, elapsed 00:09:05, 1x A100",
+    "started": "2026-10-17T12:19:59+0200",
+    "log": "~/PRISM-VFL/logs/prism_privacy_sweep_28225642.out / .err (Snellius)",
+    "outputs": "smoke_tests/revision1/2roundtest_sweep.csv, 2roundtest_sweep_test.csv, 2roundtest_checkpoints/ (Snellius)",
+    "scope": "E1 setting at seed 42, 2 rounds, real data: 11 runs (PRISM equal weights at epsilon inf/10/5/2/1/0.5, PRISM uncertainty side arm at inf/5, ST-IHM/ST-Decomp/ST-Pheno) + test-set evaluation"
+  },
+
+  "required_logging": {
+    "branch": "revision-1",
+    "commit": "631791773763abee3a4ea73a3aac5def9be971d3",
+    "seed": 42,
+    "aligned_sizes": {"train": 14679, "val": 3221, "test": 3235},
+    "first_3_batch_stay_id_hashes": {
+      "batch_1": {"A": "584ee2fa0a5b", "B": "584ee2fa0a5b", "C": "584ee2fa0a5b"},
+      "batch_2": {"A": "479af5dcd7f9", "B": "479af5dcd7f9", "C": "479af5dcd7f9"},
+      "batch_3": {"A": "2d92c33d7cbd", "B": "2d92c33d7cbd", "C": "2d92c33d7cbd"},
+      "note": "logged for all 11 runs (33 lines); A = B = C on every line, and the same three hashes in every run of the seed (identical batch order across arms)"
+    },
+    "loss_weighting": "equal task weights {1,1,1} for PRISM-equal; uncertainty weighting only in the 2 labelled side-arm runs; single-task weights for ST-*",
+    "checkpoint_policy": "best mean validation AUROC over active tasks (bestmean_<model>_seed42.pt)",
+    "batch_size": 64,
+    "dp_parameters": {
+      "sample_rate_q": 0.004366812227074236,
+      "batches_per_round": 229,
+      "clipping_norm": 1.0,
+      "delta": 1e-05,
+      "sigma_uniform": {"10.0": 0.4512, "5.0": 0.5646, "2.0": 0.7690, "1.0": 0.9985, "0.5": 1.3477},
+      "note": "sigma calibrated for this test's 2 rounds, hence smaller than the 100-round values (0.690 / 0.908 / 1.592 / 2.793 / 5.156); q and batches per round equal the T12 frozen values"
+    },
+    "class_weight": "decomp pos_weight 8.0555 from aligned training labels (T09)",
+    "source": "[run_config] and [stay_hashes] lines in the job log; '[eval] aligned test stays: 3235' from the test evaluator"
+  },
+
+  "acceptance": {
+    "no_alignment_assertion_fails": {"result": true, "evidence": "job COMPLETED with exit 0; check_same_stays runs before every forward pass; .err has 0 tracebacks/errors (only opacus/torch UserWarnings)"},
+    "abc_batch_stay_hashes_identical": {"result": true, "evidence": "33/33 [stay_hashes] lines have A = B = C"},
+    "checkpoint_saved_and_loadable": {"result": true, "evidence": "evaluate_test_prism_privacy_sweep.py loaded bestmean_*_seed42.pt for all 11 runs, asserted checkpoint round == best_round, and scored them on the 3,235 aligned test stays"}
+  },
+
+  "notes": [
+    "opacus warns 'Optimal order is the largest alpha' for some DP levels in this 2-round test; with so few steps the RDP optimum sits at the edge of the default alpha range (bound slightly loose, i.e. conservative). Check whether it persists at 100 rounds in T16.",
+    "smoke_tests/revision1/2roundtest_checkpoints/ on Snellius also holds files from earlier pre-flight tests (seed 7, pre-T10 best_* names); the evaluator loads only bestmean_*_seed42, so they do not affect this result."
+  ]
+}

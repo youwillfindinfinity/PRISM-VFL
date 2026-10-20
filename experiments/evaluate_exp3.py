@@ -235,7 +235,7 @@ def main():
         writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(all_rows)
-    print(f"\nExp 4 test results -> {args.output}")
+    print(f"\nExp 3 test results -> {args.output}")
 
 
 if __name__ == "__main__":

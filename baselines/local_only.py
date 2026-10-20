@@ -34,7 +34,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -197,7 +196,6 @@ def train_local(
     prebuilt_loaders: dict = None,
     patience:         int = 15,
     ckpt_dir:         str | None = None,
-    decomp_pos_weight: float = 0.0,  # 0.0 = auto-compute from CSV (Site B only)
 ) -> list[dict]:
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -210,17 +208,22 @@ def train_local(
     cfg       = _SITE_CFG[site]
     task_type = cfg["task_type"]
 
-    # Determine pos_weight for Site B decompensation
+    if prebuilt_loaders is not None:
+        loaders = prebuilt_loaders
+    elif use_synthetic:
+        loaders = _synthetic_loaders(site, batch_size, seed)
+    else:
+        loaders = _real_loaders(site, root, batch_size, num_workers)
+
+    # Decomp pos_weight from the train stays this baseline sees.
     pw = 1.0
-    if site == "B" and not use_synthetic:
-        if decomp_pos_weight > 0.0:
-            pw = decomp_pos_weight
-        else:
-            splits_dir = Path(root) / "data" / "vertical_splits"
-            _b = pd.read_csv(splits_dir / "site_B_labs.csv", usecols=["y_decomp", "split"])
-            pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-            pw = (1.0 - pos_rate) / pos_rate
-            print(f"[local_B] decomp pos_weight={pw:.1f}  (pos_rate={pos_rate:.3%})")
+    train_ds = loaders["train"].dataset
+    if site == "B" and hasattr(train_ds, "labels"):
+        pos_rate = float(np.mean(train_ds.labels))
+        assert 0.0 < pos_rate < 1.0, f"Degenerate decomp positive rate: {pos_rate}"
+        pw = (1.0 - pos_rate) / pos_rate
+        print(f"[local_B] decomp prevalence {pos_rate:.3%} on {len(train_ds):,} "
+              f"train stays -> pos_weight={pw:.2f}")
 
     encoder = SiteEncoder(
         input_dim  = cfg["input_dim"],
@@ -236,16 +239,9 @@ def train_local(
         list(encoder.parameters()) + list(head.parameters()), lr=lr
     )
 
-    if prebuilt_loaders is not None:
-        loaders = prebuilt_loaders
-    elif use_synthetic:
-        loaders = _synthetic_loaders(site, batch_size, seed)
-    else:
-        loaders = _real_loaders(site, root, batch_size, num_workers)
-
     # early stopping state
     primary = "auc_roc" if task_type == "binary" else "macro_auc"
-    best_score, no_improve, best_state = -1.0, 0, None
+    best_score, no_improve = -1.0, 0
 
     rows = []
     for epoch in range(1, n_epochs + 1):
@@ -296,9 +292,6 @@ def train_local(
         if score > best_score:
             best_score = score
             no_improve = 0
-            best_state = {k: v.cpu().clone() for k, v in
-                          {**dict(encoder.named_parameters()),
-                           **dict(head.named_parameters())}.items()}
             if ckpt_dir is not None and not use_synthetic:
                 Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
                 torch.save(

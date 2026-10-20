@@ -1,19 +1,21 @@
 """
 revision_scripts/analyse_prism_privacy_sweep.py — statistics over
-results_revision/prism_privacy_sweep.csv (pure pandas/scipy/numpy, no GPU).
+results_revision/prism_privacy_sweep.csv (validation, per round) and
+results_revision/prism_privacy_sweep_test.csv (test, best-mean checkpoint)
+(pure pandas/scipy/numpy, no GPU).
 
-Computes, per task (ihm/decomp/pheno):
+Computes, per split (val/test) and task (ihm/decomp/pheno):
   - per-seed best-round mean, SD, bootstrap 95% CI
   - paired PRISM(equal, eps=inf) - matching ST baseline, per seed: Wilcoxon + sign test
   - reproducible/directional verdict (CI excludes 0 AND sign p<0.05 AND >=8/10 seeds agree)
   - negative transfer rate (fraction of seeds where PRISM < ST)
   - DP utility loss: paired PRISM(equal, eps) - PRISM(equal, inf), per seed
-  - PCMU via compute_pcmu.evaluate_sweep() (compute_pcmu.py itself untouched)
+  - PCMU via compute_pcmu.evaluate_sweep() on validation curves (compute_pcmu.py itself untouched)
 
 Usage:
     python revision_scripts/analyse_prism_privacy_sweep.py
     python revision_scripts/analyse_prism_privacy_sweep.py \
-        --input smoke_tests/revision1/sweep.csv --output smoke_tests/revision1/stats.csv \
+        --input smoke_tests/revision1/sweep.csv --test_input smoke_tests/revision1/sweep_test.csv --output smoke_tests/revision1/stats.csv \
         --summary_md smoke_tests/revision1/summary.md
 """
 
@@ -31,7 +33,7 @@ from scipy.stats import wilcoxon, binomtest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from experiments.compute_pcmu import evaluate_sweep
 
-TASKS = {"ihm": "val_ihm_auroc", "decomp": "val_decomp_auroc", "pheno": "val_pheno_macro_auroc"}
+TASK_METRICS = {"ihm": "ihm_auroc", "decomp": "decomp_auroc", "pheno": "pheno_macro_auroc"}
 ST_NAME = {"ihm": "ST-IHM", "decomp": "ST-Decomp", "pheno": "ST-Pheno"}
 DP_EPS_LEVELS = [0.5, 1.0, 2.0, 5.0, 10.0]
 
@@ -46,21 +48,26 @@ def bootstrap_ci(values: np.ndarray, n_boot: int = 10_000, alpha: float = 0.05, 
     return float(lo), float(hi)
 
 
+def task_cols(split: str) -> dict[str, str]:
+    return {task: f"{split}_{metric}" for task, metric in TASK_METRICS.items()}
+
+
 def per_seed_best(df: pd.DataFrame, task_col: str) -> pd.DataFrame:
-    """One row per (arm, weighting, epsilon_level, seed): task_col at that run's best_round."""
-    sel = df[df["round"] == df["best_round"]]
+    """One row per (arm, weighting, epsilon_level, seed): task_col at that run's best_round.
+    The test CSV already holds one row per run."""
+    sel = df[df["round"] == df["best_round"]] if "round" in df else df
     return sel[["arm", "weighting", "epsilon_level", "seed", task_col]].rename(columns={task_col: "value"})
 
 
-def summary_rows(df: pd.DataFrame) -> list[dict]:
+def summary_rows(df: pd.DataFrame, split: str) -> list[dict]:
     rows = []
-    for task, col in TASKS.items():
+    for task, col in task_cols(split).items():
         best = per_seed_best(df, col)
         for (arm, weighting, eps), g in best.groupby(["arm", "weighting", "epsilon_level"]):
             vals = g["value"].to_numpy(dtype=float)
             lo, hi = bootstrap_ci(vals)
             rows.append(dict(
-                metric="summary", task=task, arm=arm, weighting=weighting, epsilon_level=eps,
+                metric="summary", split=split, task=task, arm=arm, weighting=weighting, epsilon_level=eps,
                 mean=float(np.nanmean(vals)),
                 sd=float(np.nanstd(vals, ddof=1)) if len(vals) > 1 else float("nan"),
                 ci_lo=lo, ci_hi=hi, n_seeds=len(vals),
@@ -68,11 +75,11 @@ def summary_rows(df: pd.DataFrame) -> list[dict]:
     return rows
 
 
-def paired_rows(df: pd.DataFrame) -> list[dict]:
+def paired_rows(df: pd.DataFrame, split: str) -> list[dict]:
     """PRISM(equal, eps=inf) - matching ST baseline, per seed, per task."""
     rows = []
     prism_inf = df[(df.arm == "PRISM") & (df.weighting == "equal") & (df.epsilon_level == float("inf"))]
-    for task, col in TASKS.items():
+    for task, col in task_cols(split).items():
         prism = per_seed_best(prism_inf, col)
         st = per_seed_best(df[df.arm == ST_NAME[task]], col)
         merged = prism.merge(st, on="seed", suffixes=("_prism", "_st"))
@@ -87,7 +94,7 @@ def paired_rows(df: pd.DataFrame) -> list[dict]:
         agree = max(n_pos, len(deltas) - n_pos)
         reproducible = bool((lo > 0 or hi < 0) and w_p < 0.05 and sign_p < 0.05 and agree >= 8)
         rows.append(dict(
-            metric="paired_vs_st", task=task, arm="PRISM", weighting="equal", epsilon_level=float("inf"),
+            metric="paired_vs_st", split=split, task=task, arm="PRISM", weighting="equal", epsilon_level=float("inf"),
             mean=float(np.mean(deltas)), sd=float(np.std(deltas, ddof=1)) if len(deltas) > 1 else float("nan"),
             ci_lo=lo, ci_hi=hi, n_seeds=len(deltas), wilcoxon_p=w_p, sign_p=sign_p,
             n_positive=n_pos, reproducible=reproducible,
@@ -96,11 +103,11 @@ def paired_rows(df: pd.DataFrame) -> list[dict]:
     return rows
 
 
-def dp_utility_loss_rows(df: pd.DataFrame) -> list[dict]:
+def dp_utility_loss_rows(df: pd.DataFrame, split: str) -> list[dict]:
     """PRISM(equal, eps) - PRISM(equal, eps=inf), per seed, per task, per finite eps level."""
     rows = []
     prism_equal = df[(df.arm == "PRISM") & (df.weighting == "equal")]
-    for task, col in TASKS.items():
+    for task, col in task_cols(split).items():
         nodp = per_seed_best(prism_equal[prism_equal.epsilon_level == float("inf")], col)
         for eps in DP_EPS_LEVELS:
             dp = per_seed_best(prism_equal[prism_equal.epsilon_level == eps], col)
@@ -112,7 +119,7 @@ def dp_utility_loss_rows(df: pd.DataFrame) -> list[dict]:
                 continue
             lo, hi = bootstrap_ci(deltas)
             rows.append(dict(
-                metric="dp_utility_loss", task=task, arm="PRISM", weighting="equal", epsilon_level=eps,
+                metric="dp_utility_loss", split=split, task=task, arm="PRISM", weighting="equal", epsilon_level=eps,
                 mean=float(np.mean(deltas)), sd=float(np.std(deltas, ddof=1)) if len(deltas) > 1 else float("nan"),
                 ci_lo=lo, ci_hi=hi, n_seeds=len(deltas),
             ))
@@ -131,7 +138,7 @@ def pcmu_rows(df: pd.DataFrame) -> list[dict]:
     rows = []
     for eps, g in pcmu_df.groupby("epsilon_level"):
         rows.append(dict(
-            metric="pcmu", task="all", arm="PRISM", weighting="equal", epsilon_level=eps,
+            metric="pcmu", split="val", task="all", arm="PRISM", weighting="equal", epsilon_level=eps,
             mean=float(g["pcmu"].mean()),
             sd=float(g["pcmu"].std(ddof=1)) if len(g) > 1 else float("nan"),
             n_seeds=len(g),
@@ -144,7 +151,7 @@ def write_summary_md(path: Path, paired: list[dict]) -> None:
     for r in paired:
         verdict = "reproducible" if r["reproducible"] else "directional"
         lines.append(
-            f"- **{r['task']}**: PRISM - ST Δ = {r['mean']:.4f} "
+            f"- **{r['task']}** ({r['split']}): PRISM - ST Δ = {r['mean']:.4f} "
             f"(95% CI [{r['ci_lo']:.4f}, {r['ci_hi']:.4f}], "
             f"sign-test p={r['sign_p']:.4f}, {r['n_positive']}/{r['n_seeds']} seeds positive) "
             f"-> **{verdict}**. Negative transfer rate: {r['negative_transfer_rate']:.0%}."
@@ -155,16 +162,18 @@ def write_summary_md(path: Path, paired: list[dict]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input",  default="results_revision/prism_privacy_sweep.csv")
+    parser.add_argument("--test_input", default="results_revision/prism_privacy_sweep_test.csv")
     parser.add_argument("--output", default="results_revision/prism_privacy_sweep_stats.csv")
-    parser.add_argument("--summary_md", default="revision_docs/prism_privacy_sweep_summary.md")
+    parser.add_argument("--summary_md", default="results_revision/prism_privacy_sweep_summary.md")
     args = parser.parse_args()
 
-    df = pd.read_csv(args.input)
-    assert df["epsilon_level"].dtype != object, (
-        "epsilon_level did not parse as numeric — check the input CSV's epsilon_level column."
-    )
-
-    rows = summary_rows(df) + paired_rows(df) + dp_utility_loss_rows(df) + pcmu_rows(df)
+    rows = []
+    for split, path in (("val", args.input), ("test", args.test_input)):
+        df = pd.read_csv(path)
+        assert df["epsilon_level"].dtype != object, f"epsilon_level did not parse as numeric in {path}"
+        rows += summary_rows(df, split) + paired_rows(df, split) + dp_utility_loss_rows(df, split)
+        if split == "val":
+            rows += pcmu_rows(df)
     out = pd.DataFrame(rows)
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)

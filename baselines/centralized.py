@@ -25,7 +25,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -34,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from experiment_config import BATCH_SIZE, LEARNING_RATE, PATIENCE
 
 from data_prep.dataset import (
-    VFLSiteDataset, collate_fn,
+    VFLSiteDataset,
     SITE_A_FEATURES, SITE_B_FEATURES, SITE_C_FEATURES, PHENO_LABEL_COLS,
 )
 from model.mmoe import MMoEServer
@@ -118,6 +117,7 @@ class CentralizedDataset(torch.utils.data.Dataset):
         self._idx_b = {s: i for i, s in enumerate(self._b.stays)}
         self._idx_c = {s: i for i, s in enumerate(self._c.stays)}
         self._common_stays = common
+        self.decomp_labels = self._b.labels[[self._idx_b[s] for s in common]]
 
     def __len__(self): return len(self._common_stays)
 
@@ -163,31 +163,11 @@ def _weighted_bce(pred: torch.Tensor, target: torch.Tensor, pos_weight: float) -
 def train_centralized(root: str, n_epochs: int, lr: float, batch_size: int,
                       seed: int, use_synthetic: bool, num_workers: int = 0,
                       hidden_dim: int = 128, prebuilt_loaders: dict = None,
-                      patience: int = 15, ckpt_dir: str | None = None,
-                      decomp_pos_weight: float = 0.0) -> list[dict]:
+                      patience: int = 15, ckpt_dir: str | None = None) -> list[dict]:
     torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = True
-
-    # Compute pos_weight for decompensation task
-    if use_synthetic:
-        _decomp_pw = 1.0
-    elif decomp_pos_weight > 0.0:
-        _decomp_pw = decomp_pos_weight
-    else:
-        splits_dir = Path(root) / "data" / "vertical_splits"
-        _b = pd.read_csv(splits_dir / "site_B_labs.csv", usecols=["y_decomp", "split"])
-        pos_rate = float(_b[_b["split"] == "train"]["y_decomp"].mean())
-        _decomp_pw = (1.0 - pos_rate) / pos_rate
-        print(f"[centralized] decomp pos_weight={_decomp_pw:.1f}  (pos_rate={pos_rate:.3%})")
-
-    encoder  = CentralizedEncoder(hidden_dim=hidden_dim).to(device)
-    mmoe     = MMoEServer(input_dim=_EMBED_DIM).to(device)
-    opt      = torch.optim.Adam(
-        list(encoder.parameters()) + list(mmoe.parameters()), lr=lr)
-    ihm_fn   = nn.BCELoss()
-    pheno_fn = nn.BCELoss()
 
     if prebuilt_loaders is not None:
         loaders = prebuilt_loaders
@@ -200,6 +180,23 @@ def train_centralized(root: str, n_epochs: int, lr: float, batch_size: int,
                               collate_fn=_collate, num_workers=num_workers,
                               pin_memory=True)
             for split in ("train", "val")}
+
+    # Decomp pos_weight from the train stays this model sees.
+    _decomp_pw = 1.0
+    train_ds = loaders["train"].dataset
+    if hasattr(train_ds, "decomp_labels"):
+        pos_rate = float(np.mean(train_ds.decomp_labels))
+        assert 0.0 < pos_rate < 1.0, f"Degenerate decomp positive rate: {pos_rate}"
+        _decomp_pw = (1.0 - pos_rate) / pos_rate
+        print(f"[centralized] decomp prevalence {pos_rate:.3%} on {len(train_ds):,} "
+              f"train stays -> pos_weight={_decomp_pw:.2f}")
+
+    encoder  = CentralizedEncoder(hidden_dim=hidden_dim).to(device)
+    mmoe     = MMoEServer(input_dim=_EMBED_DIM).to(device)
+    opt      = torch.optim.Adam(
+        list(encoder.parameters()) + list(mmoe.parameters()), lr=lr)
+    ihm_fn   = nn.BCELoss()
+    pheno_fn = nn.BCELoss()
 
     # early stopping state — monitor mean AUC across all three tasks
     best_score, no_improve = -1.0, 0

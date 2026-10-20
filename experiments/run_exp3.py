@@ -121,7 +121,7 @@ def main():
         writer.writeheader()
         writer.writerows(all_rows)
 
-    print(f"\nExp 4 complete. Results → {args.output}")
+    print(f"\nExp 3 complete. Results → {args.output}")
 
 
 if __name__ == "__main__":
