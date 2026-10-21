@@ -158,10 +158,10 @@ def _plot_cost(ax):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp3",      default="results/exp3.csv",
+    parser.add_argument("--exp3",      default="results_revision/exp3.csv",
                         help="Unused; kept for backwards compatibility.")
-    parser.add_argument("--test_exp3", default="results/test_exp3.csv")
-    parser.add_argument("--output",    default="Manuscript/figures/Figure5b_Scalability.png")
+    parser.add_argument("--test_exp3", default="results_revision/test_exp3.csv")
+    parser.add_argument("--output",    default="Manuscript/figures_revision/Figure5b_Scalability.png")
     args = parser.parse_args()
 
     test_df = pd.read_csv(args.test_exp3)

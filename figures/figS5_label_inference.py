@@ -57,8 +57,8 @@ def _eps_to_x(eps_str: str) -> int:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="results/bound_validation.csv")
-    parser.add_argument("--output", default="Manuscript/figures/S5_LabelInference.png")
+    parser.add_argument("--input",  default="results_revision/bound_validation.csv")
+    parser.add_argument("--output", default="Manuscript/figures_revision/S5_LabelInference.png")
     args = parser.parse_args()
 
     df = pd.read_csv(args.input)

@@ -10,8 +10,8 @@ Single panel:
 
 Usage:
     python figures/figure6_resilience_variance.py \
-        --input results/privacy_utility_combined.csv \
-        --output plots/Figure6_SQR2.png
+        --stats results_revision/prism_privacy_sweep_stats.csv --split test \
+        --output Manuscript/figures_revision/Figure6_SQR2.png
 """
 
 import argparse
@@ -43,9 +43,9 @@ plt.rcParams.update({
 _C = ["#9d7b78", "#6a4c7a", "#2f283d", "#8a3c48", "#3d3527", "#b8c7d6", "#2f4a6d"]
 
 TASK_COLS = {
-    "IHM":    ("val_ihm_auroc",         _C[1]),   # purple
-    "Decomp": ("val_decomp_auroc",      _C[2]),   # dark purple/navy
-    "Pheno":  ("val_pheno_macro_auroc", _C[3]),   # dark red
+    "IHM":    ("ihm",    _C[1]),   # purple
+    "Decomp": ("decomp", _C[2]),   # dark purple/navy
+    "Pheno":  ("pheno",  _C[3]),   # dark red
 }
 EPS_ORDER  = [0.5, 1.0, 2.0, 5.0, 10.0, float("inf")]
 EPS_LABELS = ["0.5", "1", "2", "5", "10", "∞"]
@@ -53,28 +53,25 @@ EPS_LABELS = ["0.5", "1", "2", "5", "10", "∞"]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="results/privacy_utility_combined.csv")
-    parser.add_argument("--output", default="Manuscript/figures/Figure6_SQR2.png")
-    parser.add_argument("--mode",   default="uniform",
-                        help="Which DP mode to plot (uniform or stratified)")
+    parser.add_argument("--stats",  default="results_revision/prism_privacy_sweep_stats.csv")
+    parser.add_argument("--split",  default="test", choices=["test", "val"])
+    parser.add_argument("--output", default="Manuscript/figures_revision/Figure6_SQR2.png")
     args = parser.parse_args()
 
-    df = pd.read_csv(args.input)
-    df["epsilon_level"] = pd.to_numeric(df["epsilon_level"], errors="coerce").fillna(float("inf"))
-
-    df = df.groupby(["mode", "epsilon_level", "seed"]).last().reset_index()
-    df = df[df["mode"] == args.mode]
+    df = pd.read_csv(args.stats)
+    df = df[(df["metric"] == "summary") & (df["split"] == args.split)
+            & (df["arm"] == "PRISM") & (df["weighting"] == "equal")]
+    sd = df.set_index(["task", "epsilon_level"])["sd"]
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
-    for task_name, (task_col, color) in TASK_COLS.items():
+    for task_name, (task, color) in TASK_COLS.items():
         x_plot, y_std = [], []
         for eps in EPS_ORDER:
-            sub = df[df["epsilon_level"] == eps][task_col]
-            if sub.empty:
+            if (task, eps) not in sd.index:
                 continue
             x_plot.append(EPS_ORDER.index(eps))
-            y_std.append(float(sub.std()))
+            y_std.append(float(sd[(task, eps)]))
 
         ax.plot(x_plot, y_std, color=color, marker="o", ms=4, linewidth=1.4,
                 label=task_name)

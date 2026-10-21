@@ -371,9 +371,9 @@ def _load_abl3_from_test(path: str) -> pd.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input",       default="results/dp_ablations.csv")
-    parser.add_argument("--input_test",  default="results/test_ablations_dp.csv")
-    parser.add_argument("--outdir", default="Manuscript/figures")
+    parser.add_argument("--input",       default="results_revision/dp_ablations.csv")
+    parser.add_argument("--input_test",  default="results_revision/test_ablations_dp.csv")
+    parser.add_argument("--outdir", default="Manuscript/figures_revision")
     parser.add_argument("--abl",    type=int, choices=[1, 2, 3],
                         help="Generate only this ablation figure (omit for unified panel).")
     args = parser.parse_args()

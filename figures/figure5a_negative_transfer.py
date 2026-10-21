@@ -65,8 +65,8 @@ def build_loss_delta_matrix(df: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp2",   default="results/exp2.csv")
-    parser.add_argument("--output", default="Manuscript/figures/Figure5a_TaskRelatedness.png")
+    parser.add_argument("--exp2",   default="results_revision/exp2.csv")
+    parser.add_argument("--output", default="Manuscript/figures_revision/Figure5a_TaskRelatedness.png")
     args = parser.parse_args()
 
     mat  = build_loss_delta_matrix(pd.read_csv(args.exp2))

@@ -10,8 +10,8 @@ Three-panel line plot (one per task: IHM / Decomp / Pheno).
 
 Usage:
     python figures/figure7_privacy_utility.py \
-        --input results/privacy_utility_combined.csv \
-        --output plots/Figure7_SRQ3.png
+        --stats results_revision/prism_privacy_sweep_stats.csv --split test \
+        --output Manuscript/figures_revision/Figure7_SRQ3.png
 """
 
 import argparse
@@ -43,81 +43,52 @@ plt.rcParams.update({
 _C = ["#9d7b78", "#6a4c7a", "#2f283d", "#8a3c48", "#3d3527", "#b8c7d6", "#2f4a6d"]
 
 CLINICAL_FLOORS = {"IHM": 0.75, "Decomp": 0.70, "Pheno": 0.65}
-TASK_COLS_VAL = {
-    "IHM":    "val_ihm_auroc",
-    "Decomp": "val_decomp_auroc",
-    "Pheno":  "val_pheno_macro_auroc",
-}
-TASK_COLS_TEST = {
-    "IHM":    "ihm_auroc",
-    "Decomp": "decomp_auroc",
-    "Pheno":  "pheno_macro_auroc",
-}
+TASKS = {"IHM": "ihm", "Decomp": "decomp", "Pheno": "pheno"}
 EPS_ORDER  = [0.5, 1.0, 2.0, 5.0, 10.0, float("inf")]
 EPS_LABELS = ["0.5", "1", "2", "5", "10", "∞"]
 
-MODE_STYLE = {
-    "uniform":    {"color": _C[4], "ls": "-",  "label": "Uniform σ"},
-    "stratified": {"color": _C[3], "ls": "--", "label": "Stratified σ"},
+ARM_STYLE = {
+    "PRISM":            {"color": _C[4], "ls": "-",  "label": "Uniform σ"},
+    "PRISM-stratified": {"color": _C[3], "ls": "--", "label": "Stratified σ"},
 }
 
 
-def _last_round_per_seed(df: pd.DataFrame) -> pd.DataFrame:
-    return df.groupby(["mode", "epsilon_level", "seed"]).last().reset_index()
+def load_summary(path: str, split: str) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    df = df[(df["metric"] == "summary") & (df["split"] == split)
+            & (df["weighting"] == "equal") & df["arm"].isin(ARM_STYLE)]
+    return df.set_index(["arm", "task", "epsilon_level"])[["mean", "sd"]].sort_index()
 
 
-def _summarise(df: pd.DataFrame, task_col: str):
-    grp = df.groupby(["mode", "epsilon_level"])[task_col]
-    return grp.mean(), grp.std()
-
-
-def _find_eps_star(means: pd.Series, floor: float, mode: str) -> float | None:
-    sub = means.xs(mode, level="mode") if mode in means.index.get_level_values("mode") else None
-    if sub is None:
-        return None
+def _find_eps_star(means: pd.Series, floor: float) -> float | None:
     for eps in EPS_ORDER:
-        if eps in sub.index and sub[eps] >= floor:
+        if eps in means.index and means[eps] >= floor:
             return eps
     return None
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="results/privacy_utility_combined.csv")
-    parser.add_argument("--output", default="Manuscript/figures/Figure7_SRQ3.png")
-    parser.add_argument("--test",   action="store_true",
-                        help="Use test-set column names (ihm_auroc etc.) instead of val_*")
+    parser.add_argument("--stats",  default="results_revision/prism_privacy_sweep_stats.csv")
+    parser.add_argument("--split",  default="test", choices=["test", "val"])
+    parser.add_argument("--output", default="Manuscript/figures_revision/Figure7_SRQ3.png")
     args = parser.parse_args()
 
-    df = pd.read_csv(args.input)
-    df["epsilon_level"] = pd.to_numeric(df["epsilon_level"], errors="coerce").fillna(float("inf"))
-    if not args.test:
-        df = _last_round_per_seed(df)
-
-    TASK_COLS = TASK_COLS_TEST if args.test else TASK_COLS_VAL
-    modes_present = df["mode"].unique().tolist()
+    summary = load_summary(args.stats, args.split)
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.5), sharey=False)
     fig.suptitle("AUC-ROC as a function of privacy budget ε per clinical prediction task", fontweight="normal")
 
-    for ax, (task_name, task_col) in zip(axes, TASK_COLS.items()):
+    for ax, (task_name, task) in zip(axes, TASKS.items()):
         floor = CLINICAL_FLOORS[task_name]
-        means, stds = _summarise(df, task_col)
 
-        for mode in ["uniform", "stratified"]:
-            if mode not in modes_present:
+        for arm, style in ARM_STYLE.items():
+            if (arm, task) not in summary.index.droplevel("epsilon_level"):
                 continue
-            style = MODE_STYLE[mode]
-            eps_vals, mu_vals, sd_vals = [], [], []
-            for eps in EPS_ORDER:
-                try:
-                    mu = means.loc[(mode, eps)]
-                    sd = stds.loc[(mode, eps)]
-                    eps_vals.append(eps)
-                    mu_vals.append(mu)
-                    sd_vals.append(sd if not np.isnan(sd) else 0.0)
-                except KeyError:
-                    continue
+            cell = summary.loc[(arm, task)]
+            eps_vals = [e for e in EPS_ORDER if e in cell.index]
+            mu_vals = cell.loc[eps_vals, "mean"].tolist()
+            sd_vals = cell.loc[eps_vals, "sd"].fillna(0.0).tolist()
 
             # Evenly-spaced categorical positions so ε values are not bunched
             x_plot = [EPS_ORDER.index(e) for e in eps_vals]
@@ -130,7 +101,7 @@ def main():
                             color=style["color"], alpha=0.15)
 
             # ε* marker
-            eps_star = _find_eps_star(means, floor, mode)
+            eps_star = _find_eps_star(cell["mean"], floor)
             if eps_star is not None:
                 x_star = EPS_ORDER.index(eps_star)
                 ax.axvline(x_star, color=style["color"], ls=":", alpha=0.6, linewidth=1.0)

@@ -175,9 +175,9 @@ def main():
     is_test = (args.source == "test")
 
     if args.input is None:
-        args.input  = "results/test_ablations.csv" if is_test else "results/ablations.csv"
+        args.input  = "results_revision/test_ablations.csv" if is_test else "results_revision/ablations.csv"
     if args.output is None:
-        args.output = "Manuscript/figures/ablations_test.png" if is_test else "Manuscript/figures/S6_Ablations.png"
+        args.output = "Manuscript/figures_revision/ablations_test.png" if is_test else "Manuscript/figures_revision/S6_Ablations.png"
 
     df = pd.read_csv(args.input)
     if not is_test:

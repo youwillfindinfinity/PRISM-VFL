@@ -250,9 +250,9 @@ def plot_dp(dp_csv: Path, out_path: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--nodp",    default="results/predictions_nodp.csv")
-    parser.add_argument("--dp",      default="results/predictions_dp.csv")
-    parser.add_argument("--out_dir", default="Manuscript/figures/")
+    parser.add_argument("--nodp",    default="results_revision/predictions_nodp.csv")
+    parser.add_argument("--dp",      default="results_revision/predictions_dp.csv")
+    parser.add_argument("--out_dir", default="Manuscript/figures_revision/")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
