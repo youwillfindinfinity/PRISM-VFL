@@ -2,15 +2,15 @@
 figures/figure4_baselines.py — Baseline comparison: local-only, centralized, VFL-MTL.
 
 Reads (gracefully skips if missing):
-  results/local_only_A.csv
-  results/local_only_B.csv
-  results/local_only_C.csv
-  results/centralized.csv
-  results/exp1.csv   (VFL-MTL rows only)
+  results_revision/local_only_A.csv
+  results_revision/local_only_B.csv
+  results_revision/local_only_C.csv
+  results_revision/centralized.csv
+  results_revision/prism_privacy_sweep.csv   (PRISM equal eps=inf and ST-* rows only)
 
 Produces:
-  plots/S3_LearningCurves.png  — val AUC per epoch/round, mean ± std (S3 Fig)
-  plots/Figure4_RQ.png         — final-epoch bar chart per task (Figure 4)
+  Manuscript/figures_revision/S3_LearningCurves.png  — val AUC per epoch/round, mean ± std (S3 Fig)
+  Manuscript/figures_revision/Figure4_RQ.png         — best-checkpoint bar chart per task (Figure 4)
 """
 
 import sys
@@ -53,9 +53,9 @@ plt.rcParams.update({
     "legend.fontsize":   10,
 })
 
-OUT = Path("Manuscript/figures")
+OUT = Path("Manuscript/figures_revision")
 OUT.mkdir(parents=True, exist_ok=True)
-RES = Path("results")
+RES = Path("results_revision")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -67,9 +67,10 @@ def _load(path: Path) -> pd.DataFrame | None:
     return None
 
 
-def _final_stats(df: pd.DataFrame, metric: str, epoch_col: str = "epoch"):
-    last = df.groupby("seed")[metric].last()
-    return float(last.mean()), float(last.std(skipna=True))
+def _final_stats(df: pd.DataFrame, metric: str, score: str):
+    """Metric at each seed's best-checkpoint epoch (first max of the selection score)."""
+    best = df.loc[df.groupby("seed")[score].idxmax(), metric]
+    return float(best.mean()), float(best.std(skipna=True))
 
 
 def _curve(ax, df: pd.DataFrame, metric: str, label: str, color: str,
@@ -87,14 +88,19 @@ local_a = _load(RES / "local_only_A.csv")
 local_b = _load(RES / "local_only_B.csv")
 local_c = _load(RES / "local_only_C.csv")
 central = _load(RES / "centralized.csv")
+if central is not None:
+    # Same checkpoint-selection score as baselines/centralized.py
+    central["val_mean_auc"] = central[["val_ihm_auc_roc", "val_decomp_auc_roc", "val_pheno_macro_auc"]].mean(axis=1)
 
 vfl_mtl = st_ihm = st_decomp = st_pheno = None
-exp1    = _load(RES / "exp1.csv")
-if exp1 is not None and "model" in exp1.columns:
-    def _subset(m):
-        s = exp1[exp1["model"] == m].copy()
+sweep   = _load(RES / "prism_privacy_sweep.csv")
+if sweep is not None:
+    sweep = sweep[sweep["epsilon_level"].astype(str) == "inf"]
+    sweep = sweep.assign(is_best=sweep["round"] == sweep["best_round"])
+    def _subset(arm):
+        s = sweep[(sweep["arm"] == arm) & (sweep["weighting"].fillna("equal") == "equal")].copy()
         return s if not s.empty else None
-    vfl_mtl   = _subset("VFL-MTL")
+    vfl_mtl   = _subset("PRISM")
     st_ihm    = _subset("ST-IHM")
     st_decomp = _subset("ST-Decomp")
     st_pheno  = _subset("ST-Pheno")
@@ -159,7 +165,7 @@ print(f"Saved: {OUT}/S3_LearningCurves.png")
 plt.close()
 
 
-# ── Figure 2: Final-epoch bar chart ──────────────────────────────────────────
+# ── Figure 2: Best-checkpoint bar chart ──────────────────────────────────────────
 
 bar_rows = []  # (task_label, model_label, mean, std, color)
 
@@ -171,16 +177,16 @@ task_defs = [
 
 for task_label, loc_df, loc_m, cen_df, cen_m, st_df, st_m, vfl_df, vfl_m, loc_key, st_key in task_defs:
     if loc_df is not None and loc_m in loc_df.columns:
-        mu, sd = _final_stats(loc_df, loc_m)
+        mu, sd = _final_stats(loc_df, loc_m, score=loc_m)
         bar_rows.append((task_label, f"local\n({loc_key[-1]})", mu, sd, PALETTE[loc_key]))
     if cen_df is not None and cen_m in cen_df.columns:
-        mu, sd = _final_stats(cen_df, cen_m)
+        mu, sd = _final_stats(cen_df, cen_m, score="val_mean_auc")
         bar_rows.append((task_label, "centralized", mu, sd, PALETTE["centralized_oracle"]))
     if st_df is not None and st_m in st_df.columns:
-        mu, sd = _final_stats(st_df, st_m, epoch_col="round")
+        mu, sd = _final_stats(st_df, st_m, score="is_best")
         bar_rows.append((task_label, st_key, mu, sd, PALETTE[st_key]))
     if vfl_df is not None and vfl_m in vfl_df.columns:
-        mu, sd = _final_stats(vfl_df, vfl_m, epoch_col="round")
+        mu, sd = _final_stats(vfl_df, vfl_m, score="is_best")
         bar_rows.append((task_label, "PRISM", mu, sd, PALETTE["VFL-MTL"]))
 
 if bar_rows:
@@ -216,7 +222,7 @@ if bar_rows:
     ax.set_xticklabels(tasks)
     ax.set_ylim(0.4, 1.10)
     ax.set_ylabel("Val AUC (mean ± std)")
-    ax.set_title("Final epoch performance per task across model configurations", fontweight="normal")
+    ax.set_title("Best-checkpoint performance per task across model configurations", fontweight="normal")
     ax.legend(fontsize=9, loc="upper center", bbox_to_anchor=(0.5, -0.10),
               ncol=5, frameon=False)
     ax.spines["top"].set_visible(False)
@@ -230,7 +236,6 @@ else:
     print("  [SKIP] No data available for bar chart")
 
 # ── Console summary ───────────────────────────────────────────────────────────
-print("\n── Final metrics (mean ± std, 3 seeds) ──")
+print("\n── Best-checkpoint metrics (mean ± std across seeds) ──")
 for task, model, mu, sd, _ in bar_rows:
     print(f"  {task.replace(chr(10),' '):20s}  {model:20s}  {mu:.4f} ± {sd:.4f}")
-

@@ -8,6 +8,7 @@
 #
 # Figure → RQ mapping
 # ─────────────────────────────────────────────────────────────────────────────
+# Fig 4 + S3 (Figure4_RQ.png, S3_LearningCurves.png) RQ — Baselines vs. PRISM (best-checkpoint val AUC)
 # Fig 5a (Figure5a_TaskRelatedness.png) SRQ1 — Task relatedness / negative transfer
 # Fig 5b (Figure5b_Scalability.png)    Exp3 — 2-site vs. 3-site scalability
 # Fig 6  (Figure6_SQR2.png)            SRQ2 — DP stochasticity variance
@@ -20,7 +21,6 @@
 # brier  (brier_nodp.png, brier_dp.png) Calibration curves (Brier score)
 #
 # Pending, not yet ported to results_revision/:
-#   Fig 4 + S3 (figure4_baselines.py) — needs test evaluation of the baseline checkpoints
 #   Fig 8 + S8 (figure8_pcmu.py, experiments/evaluate_phase4.py) — needs the PCMU recompute
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,10 @@ cd "$(dirname "$0")/.."   # ensure we are in PRISM-VFL/
 
 mkdir -p Manuscript/figures_revision
 
+echo "=== Fig 4 + S3: Baselines vs. PRISM (RQ) ==="
+python3 figures/figure4_baselines.py
+
+echo ""
 echo "=== Fig 5a: Task relatedness / negative transfer (SRQ1) ==="
 python3 figures/figure5a_negative_transfer.py
 
