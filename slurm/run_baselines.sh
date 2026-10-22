@@ -23,13 +23,14 @@ pip install --quiet --user "opacus>=1.4.0" "scikit-multilearn>=0.2.0" 2>/dev/nul
 set -euo pipefail
 
 SEEDS=$(python -c "from experiment_config import SEEDS; print(*SEEDS)")
+MAX_ROUNDS=$(python -c "from experiment_config import MAX_ROUNDS; print(MAX_ROUNDS)")
 
 for SITE in A B C; do
-    python -u baselines/local_only.py --site ${SITE} --seeds ${SEEDS} \
+    python -u baselines/local_only.py --site ${SITE} --seeds ${SEEDS} --n_epochs ${MAX_ROUNDS} \
         --ckpt_dir checkpoints_revision --output results_revision/local_only_${SITE}.csv
 done
 
-python -u baselines/centralized.py --seeds ${SEEDS} \
+python -u baselines/centralized.py --seeds ${SEEDS} --n_epochs ${MAX_ROUNDS} \
     --ckpt_dir checkpoints_revision --output results_revision/centralized.csv
 
 python -u experiments/run_baselines.py --skip_rerun \
