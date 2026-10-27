@@ -1,0 +1,67 @@
+metric,group,label,value,n
+n_stays,Site A,,21139.0,21139
+n_patients,Site A,,18094.0,18094
+n_stays,Site B,,41602.0,41602
+n_patients,Site B,,33419.0,33419
+n_stays,Site C,,41902.0,41902
+n_patients,Site C,,33678.0,33678
+n_stays,Filtered cohort,,41902.0,41902
+n_patients,Filtered cohort,,33678.0,33678
+n_stays,Aligned,,21135.0,21135
+n_patients,Aligned,,18090.0,18090
+decomp_rate,Aligned,,0.10844570617459191,21135
+decomp_rate,Excluded,,0.05941271314799433,20467
+decomp_rate,Aligned train,,0.11042986579467266,14679
+pheno_prev,Aligned,Acute and unspecified renal failure,0.2692216702152827,21135
+pheno_prev,Aligned,Acute cerebrovascular disease,0.08677549089188549,21135
+pheno_prev,Aligned,Acute myocardial infarction,0.11611071682044002,21135
+pheno_prev,Aligned,Cardiac dysrhythmias,0.3725100544121126,21135
+pheno_prev,Aligned,Chronic kidney disease,0.14312751360302814,21135
+pheno_prev,Aligned,Chronic obstructive pulmonary disease and bronchiectasis,0.14743316773125148,21135
+pheno_prev,Aligned,Complications of surgical procedures or medical care,0.254222853087296,21135
+pheno_prev,Aligned,Conduction disorders,0.07840075703808848,21135
+pheno_prev,Aligned,Congestive heart failure; nonhypertensive,0.3261887863733144,21135
+pheno_prev,Aligned,Coronary atherosclerosis and other heart disease,0.32727702862550273,21135
+pheno_prev,Aligned,Diabetes mellitus with complications,0.09926661935178614,21135
+pheno_prev,Aligned,Diabetes mellitus without complication,0.20033120416370948,21135
+pheno_prev,Aligned,Disorders of lipid metabolism,0.2675656493967353,21135
+pheno_prev,Aligned,Essential hypertension,0.413532055831559,21135
+pheno_prev,Aligned,Fluid and electrolyte disorders,0.3157321977762006,21135
+pheno_prev,Aligned,Gastrointestinal hemorrhage,0.07636621717530163,21135
+pheno_prev,Aligned,Hypertension with complications and secondary hypertension,0.14118760350130116,21135
+pheno_prev,Aligned,Other liver diseases,0.10565412822332623,21135
+pheno_prev,Aligned,Other lower respiratory disease,0.05923823042346818,21135
+pheno_prev,Aligned,Other upper respiratory disease,0.051809794180269694,21135
+pheno_prev,Aligned,Pleurisy; pneumothorax; pulmonary collapse,0.11611071682044002,21135
+pheno_prev,Aligned,Pneumonia (except that caused by tuberculosis or sexually transmitted disease),0.19924296191152116,21135
+pheno_prev,Aligned,Respiratory failure; insufficiency; arrest (adult),0.2739531582682754,21135
+pheno_prev,Aligned,Septicemia (except in labor),0.19484267802223798,21135
+pheno_prev,Aligned,Shock,0.11525904897090135,21135
+pheno_prev_mean,Aligned,,0.1900544121126094,21135
+pheno_prev,Excluded,Acute and unspecified renal failure,0.15765397024124814,20767
+pheno_prev,Excluded,Acute cerebrovascular disease,0.05995088361342515,20767
+pheno_prev,Excluded,Acute myocardial infarction,0.09067270188279482,20767
+pheno_prev,Excluded,Cardiac dysrhythmias,0.2689362931574132,20767
+pheno_prev,Excluded,Chronic kidney disease,0.12433187268262147,20767
+pheno_prev,Excluded,Chronic obstructive pulmonary disease and bronchiectasis,0.112630615880965,20767
+pheno_prev,Excluded,Complications of surgical procedures or medical care,0.15996532960947657,20767
+pheno_prev,Excluded,Conduction disorders,0.06519959551211056,20767
+pheno_prev,Excluded,Congestive heart failure; nonhypertensive,0.2083112630615881,20767
+pheno_prev,Excluded,Coronary atherosclerosis and other heart disease,0.31891943949535323,20767
+pheno_prev,Excluded,Diabetes mellitus with complications,0.0910097751239948,20767
+pheno_prev,Excluded,Diabetes mellitus without complication,0.18490874945827515,20767
+pheno_prev,Excluded,Disorders of lipid metabolism,0.3133336543554678,20767
+pheno_prev,Excluded,Essential hypertension,0.42533827707420424,20767
+pheno_prev,Excluded,Fluid and electrolyte disorders,0.2205903597053017,20767
+pheno_prev,Excluded,Gastrointestinal hemorrhage,0.06996677420908172,20767
+pheno_prev,Excluded,Hypertension with complications and secondary hypertension,0.12341695959936437,20767
+pheno_prev,Excluded,Other liver diseases,0.07174844705542448,20767
+pheno_prev,Excluded,Other lower respiratory disease,0.04410844127702605,20767
+pheno_prev,Excluded,Other upper respiratory disease,0.029229065344055474,20767
+pheno_prev,Excluded,Pleurisy; pneumothorax; pulmonary collapse,0.057976597486396685,20767
+pheno_prev,Excluded,Pneumonia (except that caused by tuberculosis or sexually transmitted disease),0.07723792555496702,20767
+pheno_prev,Excluded,Respiratory failure; insufficiency; arrest (adult),0.08552029662445225,20767
+pheno_prev,Excluded,Septicemia (except in labor),0.08942071555833775,20767
+pheno_prev,Excluded,Shock,0.04117108874656908,20767
+pheno_prev_mean,Excluded,,0.13966196369239658,20767
+patients_in_multiple_splits,Aligned,,0.0,18090
