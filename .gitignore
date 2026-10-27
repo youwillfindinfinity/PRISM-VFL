@@ -39,3 +39,6 @@ Manuscript/
 *.swo
 *~
 audit_revision/manuscript_update_map.md
+revision_docs/
+revision_scripts/pcmu_definition_comparison.py
+audit_revision/pcmu_definition_comparison/
