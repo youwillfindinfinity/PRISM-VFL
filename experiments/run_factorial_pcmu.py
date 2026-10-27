@@ -1,18 +1,19 @@
 """
-experiments/run_phase2_factorial.py — PCMU Phase 2: Cross-factor independence gate.
+experiments/run_factorial_pcmu.py — PCMU Phase 2: Cross-factor independence gate.
 
 Full factorial: embed_dim × privacy level (ε) × task count.
-Every cell run at 3 seeds. Required by PCMUmetric.md Phase 2 before PCMU can be
-defended as a multiplicative composite.
+Every cell run at every seed in experiment_config.SEEDS. Required by PCMUmetric.md
+Phase 2 before PCMU can be defended as a multiplicative composite.
 
 Grid
 ----
   embed_dim   : {32, 64, 128}
   epsilon     : {∞ (no DP), 5.0, 1.0, 0.5}
   task_config : {all_tasks (3), ihm_decomp (2), ihm_only (1)}
-  seeds       : [42, 123, 7]
+  + ST reference: ihm_only at embed 64 for the remaining sweep ε levels {10, 2},
+    so η_comm has a same-ε single-task reference at every sweep ε.
 
-Total cells: 3 × 4 × 3 = 36 configurations × 3 seeds = 108 runs.
+Total cells: 3 × 4 × 3 + 2 = 38 configurations × 10 seeds = 380 runs.
 
 Outputs
 -------
@@ -30,10 +31,10 @@ experiments/evaluate_phase2.py using a single cross-configuration threshold.
 Usage
 -----
   # Smoke test (no data, 5 rounds):
-  python experiments/run_phase2_factorial.py --use_synthetic --n_rounds 5
+  python experiments/run_factorial_pcmu.py --use_synthetic --n_rounds 5
 
   # Real data (Snellius):
-  python experiments/run_phase2_factorial.py \\
+  python experiments/run_factorial_pcmu.py \\
       --splits_dir /home/asoare/vfl_mlt/data/vertical_splits \\
       --n_rounds 100 --device cuda
 """
@@ -50,7 +51,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiment_config import BATCH_SIZE, CLIPPING_NORM as MAX_GRAD_NORM, DELTA, MAX_ROUNDS, SEEDS
+from experiment_config import BATCH_SIZE, CLIPPING_NORM as MAX_GRAD_NORM, DELTA, EPSILON_LEVELS, MAX_ROUNDS, SEEDS
 
 from data_prep.dataset import build_site_loaders
 from train import run_training, TrainConfig, make_synthetic_loaders
@@ -70,6 +71,9 @@ TASK_CONFIGS: dict[str, dict] = {
     "ihm_decomp": {"ihm": 1.0, "decomp": 1.0, "pheno": 0.0},
     "ihm_only":   {"ihm": 1.0, "decomp": 0.0, "pheno": 0.0},
 }
+
+# Same-ε ST reference for the sweep ε levels outside EPS_LEVELS, at the sweep's embed_dim.
+ST_REF_CELLS = [(TrainConfig.embed_dim, eps, "ihm_only") for eps in EPSILON_LEVELS if eps not in EPS_LEVELS]
 
 SUMMARY_COLS = [
     "embed_dim", "epsilon_level", "task_config", "task_count", "seed",
@@ -264,13 +268,15 @@ def main() -> None:
     rounds_path  = Path(args.out_rounds)  if args.out_rounds  else out_dir / "phase2_factorial_rounds.csv"
 
     # Determine the sub-grid
-    embed_dims  = [args.embed_dim] if args.embed_dim is not None else EMBED_DIMS
-    eps_levels  = [args.eps]       if args.eps       is not None else EPS_LEVELS
-    task_cfgs   = [args.task_config] if args.task_config is not None else list(TASK_CONFIGS)
+    cells = [
+        c for c in [*product(EMBED_DIMS, EPS_LEVELS, TASK_CONFIGS), *ST_REF_CELLS]
+        if (args.embed_dim is None or c[0] == args.embed_dim)
+        and (args.eps is None or c[1] == args.eps)
+        and (args.task_config is None or c[2] == args.task_config)
+    ]
 
-    total = len(embed_dims) * len(eps_levels) * len(task_cfgs) * len(SEEDS)
-    print(f"[phase2] grid: embed={embed_dims} eps={eps_levels} tasks={task_cfgs} "
-          f"seeds={SEEDS} → {total} runs")
+    total = len(cells) * len(SEEDS)
+    print(f"[phase2] grid: {len(cells)} cells {cells} seeds={SEEDS} → {total} runs")
 
     # Build set of already-completed (embed_dim, eps, task_config, seed) keys for resume mode.
     existing: set[tuple] = set()
@@ -313,7 +319,7 @@ def main() -> None:
         if write_rounds_header:
             rw.writeheader()
 
-        for embed_dim, eps, task_cfg, seed in product(embed_dims, eps_levels, task_cfgs, SEEDS):
+        for (embed_dim, eps, task_cfg), seed in product(cells, SEEDS):
             if (embed_dim, eps, task_cfg, seed) in existing:
                 print(f"[phase2] skip {embed_dim} eps={eps} {task_cfg} seed={seed}")
                 continue
