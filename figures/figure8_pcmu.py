@@ -2,13 +2,15 @@
 figures/figure8_pcmu.py — Figure 8 (PCMU)
 
 PCMU composite score dot plot (Cleveland plot).
-One row per configuration, PCMU on x-axis, ±1 std CI bars.
-Configurations grouped by research question with a visual separator.
+One row per privacy level of PRISM (embed_dim 64), PCMU on x-axis, 95% bootstrap CI bars
+over seeds. PRISM ε=∞ (anchor, PCMU = 1.0) separated from the DP rows.
+Primary definition (R = total training rounds); the best-checkpoint sensitivity rows
+(metric pcmu_best_round) are reported in the supplementary table.
 
 Usage:
     python figures/figure8_pcmu.py
-    python figures/figure8_pcmu.py --input results/pcmu_paper_results_raw.csv \
-                                    --output plots/Figure8_PCMU.png
+    python figures/figure8_pcmu.py --input results_revision/prism_privacy_sweep_stats.csv \
+                                    --output smoke_tests/revision1/Figure8_PCMU.png
 """
 
 from __future__ import annotations
@@ -20,7 +22,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 from matplotlib.transforms import blended_transform_factory
-import numpy as np
 import pandas as pd
 
 plt.rcParams.update({
@@ -42,131 +43,86 @@ plt.rcParams.update({
 _C = ["#9d7b78", "#6a4c7a", "#2f283d", "#8a3c48", "#3d3527", "#b8c7d6", "#2f4a6d"]
 _DP = ["#c89a97", "#b07570", "#8a3c48", "#6b2d38", "#4d1f28"]
 
-# Row order (top to bottom)
-ROW_ORDER = [
-    "centralized",
-    "VFL-MTL",
-    "ST-IHM", "ST-Decomp", "ST-Pheno",
-    # separator inserted in drawing
-    "eps_10.0", "eps_5.0", "eps_2.0", "eps_1.0", "eps_0.5",
-]
+INF = float("inf")
+
+# Row order (top to bottom); separator drawn after the first row
+ROW_ORDER = [INF, 10.0, 5.0, 2.0, 1.0, 0.5]
 
 LABELS = {
-    "centralized": "Centralized oracle",
-    "VFL-MTL":     r"PRISM  $\varepsilon=\infty$",
-    "ST-IHM":      r"ST-IHM  $\varepsilon=\infty$",
-    "ST-Decomp":   r"ST-Decomp  $\varepsilon=\infty$",
-    "ST-Pheno":    r"ST-Pheno  $\varepsilon=\infty$",
-    "eps_10.0":    r"PRISM  $\varepsilon=10$",
-    "eps_5.0":     r"PRISM  $\varepsilon=5$",
-    "eps_2.0":     r"PRISM  $\varepsilon=2$",
-    "eps_1.0":     r"PRISM  $\varepsilon=1$",
-    "eps_0.5":     r"PRISM  $\varepsilon=0.5$",
+    INF:  r"PRISM  $\varepsilon=\infty$",
+    10.0: r"PRISM  $\varepsilon=10$",
+    5.0:  r"PRISM  $\varepsilon=5$",
+    2.0:  r"PRISM  $\varepsilon=2$",
+    1.0:  r"PRISM  $\varepsilon=1$",
+    0.5:  r"PRISM  $\varepsilon=0.5$",
 }
 
-COLORS = {
-    "centralized": _C[6],
-    "VFL-MTL":     _C[0],
-    "ST-IHM":      _C[1],
-    "ST-Decomp":   _C[2],
-    "ST-Pheno":    _C[4],
-    "eps_10.0":    _DP[0],
-    "eps_5.0":     _DP[1],
-    "eps_2.0":     _DP[2],
-    "eps_1.0":     _DP[3],
-    "eps_0.5":     _DP[4],
-}
+COLORS = {INF: _C[0], **dict(zip(ROW_ORDER[1:], _DP))}
 
-# y-positions: gap of 1.5 between the two groups
-N_P1 = 5   # centralized + VFL-MTL + 3 ST
-N_P2 = 5   # 5 DP configs
+N_P1 = 1   # PRISM no-DP
 GAP  = 1.2
 
-def _ypos() -> dict[str, float]:
+def _ypos() -> dict[float, float]:
     pos = {}
-    for i, cfg in enumerate(ROW_ORDER[:N_P1]):
-        pos[cfg] = float(N_P1 - 1 - i)           # 4 → 0
-    for i, cfg in enumerate(ROW_ORDER[N_P1:]):
-        pos[cfg] = float(-(GAP + i))              # -(1.2) → -(1.2+4)
+    for i, eps in enumerate(ROW_ORDER[:N_P1]):
+        pos[eps] = float(N_P1 - 1 - i)
+    for i, eps in enumerate(ROW_ORDER[N_P1:]):
+        pos[eps] = float(-(GAP + i))
     return pos
 
 
-def load(path: str) -> dict[str, tuple[float, float]]:
-    df  = pd.read_csv(path)
-    out: dict[str, tuple[float, float]] = {}
-
-    out["centralized"] = (1.0, 0.0)
-
-    exp1 = df[df["source"] == "exp1"]
-    for model in ("VFL-MTL", "ST-IHM", "ST-Decomp", "ST-Pheno"):
-        rows = exp1[exp1["config"] == model]["pcmu"].dropna()
-        out[model] = (float(rows.mean()), float(rows.std(ddof=1)) if len(rows) > 1 else 0.0)
-
-    priv = df[df["source"] == "privacy"]
-    for key in ("eps_10.0", "eps_5.0", "eps_2.0", "eps_1.0", "eps_0.5"):
-        rows = priv[priv["config"] == key]["pcmu"].dropna()
-        out[key] = (float(rows.mean()), float(rows.std(ddof=1)) if len(rows) > 1 else 0.0)
-
-    return out
+def load(path: str) -> dict[float, tuple[float, float, float]]:
+    """(mean, ci_lo, ci_hi) per ε from the primary PCMU rows of the sweep stats CSV."""
+    df = pd.read_csv(path)
+    df = df[(df["metric"] == "pcmu") & (df["split"] == "val")].set_index("epsilon_level")
+    missing = [e for e in ROW_ORDER if e not in df.index]
+    if missing:
+        raise ValueError(f"No PCMU rows in {path} for ε = {missing}")
+    return {e: (float(df.loc[e, "mean"]), float(df.loc[e, "ci_lo"]), float(df.loc[e, "ci_hi"]))
+            for e in ROW_ORDER}
 
 
-def plot(data: dict[str, tuple[float, float]], out: str) -> None:
-    ypos  = _ypos()
-    ref   = data["VFL-MTL"][0]
+def plot(data: dict[float, tuple[float, float, float]], out: str) -> None:
+    ypos = _ypos()
+    x_lo = min(lo for _, lo, _ in data.values()) - 0.5
+    x_hi = max(hi for _, _, hi in data.values()) + 0.6
 
-    fig, ax = plt.subplots(figsize=(9, 7))
-    fig.subplots_adjust(left=0.28, right=0.95, top=0.91, bottom=0.10)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    fig.subplots_adjust(left=0.28, right=0.95, top=0.88, bottom=0.14)
 
-    # ── Reference lines ───────────────────────────────────────────────────────
-    ax.axvline(1.0, color=_C[6], lw=1.2, ls="--", alpha=0.55, zorder=1)
-    ax.axvline(ref, color=_C[0], lw=1.0, ls=":",  alpha=0.55, zorder=1)
+    # ── Reference line: anchor PCMU = 1.0 (PRISM ε=∞) ─────────────────────────
+    ax.axvline(1.0, color=_C[0], lw=1.0, ls=":", alpha=0.55, zorder=1)
 
     # ── Group separator ───────────────────────────────────────────────────────
-    sep_y = -(GAP / 2)
-    ax.axhline(sep_y, color="#cccccc", lw=0.8, ls="-", zorder=1)
-
+    ax.axhline(-(GAP / 2), color="#cccccc", lw=0.8, ls="-", zorder=1)
 
     # ── Dots and CI bars ──────────────────────────────────────────────────────
-    for cfg in ROW_ORDER:
-        mu, sd = data[cfg]
-        y      = ypos[cfg]
-        color  = COLORS[cfg]
-
-        # CI bar
-        if sd > 0:
-            ax.plot([mu - sd, mu + sd], [y, y],
-                    color=color, lw=1.8, alpha=0.5, zorder=2, solid_capstyle="round")
-
-        # Dot — diamond for centralized (not an experimental result), circle for rest
-        marker = "D" if cfg == "centralized" else "o"
-        ms     = 7  if cfg == "centralized" else 9
-        ax.plot(mu, y, marker=marker, ms=ms, color=color,
+    for eps in ROW_ORDER:
+        mu, lo, hi = data[eps]
+        y, color = ypos[eps], COLORS[eps]
+        ax.plot([lo, hi], [y, y], color=color, lw=1.8, alpha=0.5, zorder=2, solid_capstyle="round")
+        ax.plot(mu, y, marker="o", ms=9, color=color,
                 markeredgecolor="white", markeredgewidth=0.8, zorder=3)
-
-        # Value annotation to the right of CI bar
-        xann = mu + sd + 0.06 if sd > 0 else mu + 0.06
-        value_str = "1.000" if cfg == "centralized" else f"{mu:.3f}"
-        ax.text(xann, y, value_str, va="center", ha="left",
+        ax.text(hi + 0.06, y, f"{mu:.3f}", va="center", ha="left",
                 fontsize=13, fontweight="bold", color="#444444")
 
     # ── y-axis tick labels ────────────────────────────────────────────────────
     ax.set_yticks(list(ypos.values()))
-    ax.set_yticklabels([LABELS[c] for c in ROW_ORDER], fontsize=9)
+    ax.set_yticklabels([LABELS[e] for e in ROW_ORDER], fontsize=9)
     ax.tick_params(axis="y", length=0)
 
     # ── x-axis ────────────────────────────────────────────────────────────────
     ax.set_xlabel("PCMU", labelpad=6)
-    ax.set_xlim(-3.8, 1.8)
+    ax.set_xlim(x_lo, x_hi)
     ax.grid(True, axis="x", alpha=0.2, zorder=0)
     ax.axvline(0, color="#aaaaaa", lw=0.6, zorder=1)
 
     # ── Direction arrow ───────────────────────────────────────────────────────
-    # Uses a blended transform: data-x coords, axes-fraction y.
-    # y=-0.16 sits below the "PCMU" x-axis label without overlapping it.
+    # Blended transform: data-x coords, axes-fraction y, below the "PCMU" x-axis label.
     trans = blended_transform_factory(ax.transData, ax.transAxes)
     ax.annotate(
         "",
-        xy=(1.0, -0.10), xytext=(-3.0, -0.10),
+        xy=(1.0, -0.16), xytext=(x_lo + 0.2, -0.16),
         xycoords=trans, textcoords=trans,
         arrowprops=dict(arrowstyle="-|>", color="#555555", lw=1.0, mutation_scale=11),
         annotation_clip=False,
@@ -174,17 +130,17 @@ def plot(data: dict[str, tuple[float, float]], out: str) -> None:
 
     # ── Legend ────────────────────────────────────────────────────────────────
     leg = [
-        mlines.Line2D([], [], color=_C[6], ls="--", lw=1.2,
-                      label="Upper bound anchor"),
-        mlines.Line2D([], [], color=_C[0], ls=":",  lw=1.0,
-                      label=r"PRISM no-DP reference"),
+        mlines.Line2D([], [], color=_C[0], ls=":", lw=1.0,
+                      label=r"Anchor: PRISM $\varepsilon=\infty$ (PCMU = 1)"),
+        mlines.Line2D([], [], color="#888888", lw=1.8, alpha=0.5,
+                      label="95% bootstrap CI (10 seeds)"),
     ]
     ax.legend(handles=leg, loc="lower right", framealpha=0.85, edgecolor="none", fontsize=9)
 
     fig.suptitle(
         "Privacy-Communication-adjusted Multi-task Utility (PCMU)\n"
-        "across federated and privacy configurations",
-        fontsize=13, fontweight="normal", y=0.98, x=0.56, ha="center",
+        "across privacy budgets",
+        fontsize=13, fontweight="normal", y=0.99, x=0.56, ha="center",
     )
 
     plt.savefig(out, dpi=800, bbox_inches="tight", facecolor="white")
@@ -194,12 +150,11 @@ def plot(data: dict[str, tuple[float, float]], out: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="results/pcmu_paper_results_raw.csv")
-    parser.add_argument("--output", default="Manuscript/figures/Figure8_PCMU.png")
+    parser.add_argument("--input",  default="results_revision/prism_privacy_sweep_stats.csv")
+    parser.add_argument("--output", default="Manuscript/figures_revision/Figure8_PCMU.png")
     args = parser.parse_args()
 
-    data = load(args.input)
-    plot(data, args.output)
+    plot(load(args.input), args.output)
 
 
 if __name__ == "__main__":

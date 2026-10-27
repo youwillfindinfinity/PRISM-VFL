@@ -8,6 +8,7 @@
 #
 # Figure → RQ mapping
 # ─────────────────────────────────────────────────────────────────────────────
+# S2     (S2_Cohort.png)               Cohort attrition and acuity bias (reads results_revision/cohort_stats.csv)
 # Fig 4 + S3 (Figure4_RQ.png, S3_LearningCurves.png) RQ — Baselines vs. PRISM (best-checkpoint val AUC)
 # Fig 5a (Figure5a_TaskRelatedness.png) SRQ1 — Task relatedness / negative transfer
 # Fig 5b (Figure5b_Scalability.png)    Exp3 — 2-site vs. 3-site scalability
@@ -19,9 +20,11 @@
 # S7B    (S7B_DP_ABL2.png)             SRQ2/3 — DP ablation 2 (task coupling)
 # S7C    (S7C_DP_ABL3.png)             SRQ2/3 — DP ablation 3 (embed_dim × ε)
 # brier  (brier_nodp.png, brier_dp.png) Calibration curves (Brier score)
+# Fig 8  (Figure8_PCMU.png)            PCMU per ε (pcmu rows of prism_privacy_sweep_stats.csv)
+# S8     (S8_PCMUSensitivity.png)      PCMU Morris/Sobol + weight sensitivity (experiments/evaluate_phase4.py)
 #
-# Pending, not yet ported to results_revision/:
-#   Fig 8 + S8 (figure8_pcmu.py, experiments/evaluate_phase4.py) — needs the PCMU recompute
+# Fig 6, 7 and 8 read results_revision/prism_privacy_sweep_stats.csv from
+# revision_scripts/analyse_prism_privacy_sweep.py; rerun it after the PCMU factorial changes.
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -29,6 +32,10 @@ cd "$(dirname "$0")/.."   # ensure we are in PRISM-VFL/
 
 mkdir -p Manuscript/figures_revision
 
+echo "=== S2: Cohort attrition ==="
+python3 figures/figS2_cohort.py
+
+echo ""
 echo "=== Fig 4 + S3: Baselines vs. PRISM (RQ) ==="
 python3 figures/figure4_baselines.py
 
@@ -66,6 +73,14 @@ python3 figures/figS7_dp_ablations.py --abl 3
 echo ""
 echo "=== Calibration curves (Brier score) ==="
 python3 figures/plot_brier.py
+
+echo ""
+echo "=== Fig 8: PCMU per privacy budget ==="
+python3 figures/figure8_pcmu.py
+
+echo ""
+echo "=== S8: PCMU sensitivity (Morris/Sobol, weights) ==="
+python3 experiments/evaluate_phase4.py
 
 echo ""
 echo "=== Done — all figures written to Manuscript/figures_revision/ ==="

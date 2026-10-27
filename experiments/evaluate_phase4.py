@@ -8,17 +8,29 @@ Inputs varied:
   w1      — Δm weight ∈ [0.40, 0.90]   (w2=(1-w1)·2/3, w3=(1-w1)·1/3)
   embed_dim — ∈ {32, 64, 128}           (encoded as continuous 0→1→2, interpolated)
 
-PCMU surrogate: z-score parameters fixed from the 108-cell factorial; raw components
-(Δm, η_priv, η_comm) interpolated bilinearly from mean-across-seeds factorial values
-at fixed task_config=all_tasks. Weight variation applied analytically on the z-scale.
+PCMU surrogate: components from compute_pcmu.factorial_components() (all_tasks runs,
+each embed_dim against its own same-ε ST-IHM and ε=∞ references), z-scored over the
+factorial pool; z-components interpolated bilinearly from mean-across-seeds values.
+Weight variation applied analytically on the z-scale; PCMU = 1.0 at ε=∞, embed_dim 64.
+
+Inputs (--results_dir): pcmu_phase2_factorial_rounds.csv and prism_privacy_sweep.csv
+(--sweep_file: ST baselines for Δ_m; PRISM runs for the weight sensitivity via
+compute_pcmu.evaluate_sweep()).
 
 Outputs:
-  results/pcmu_phase4_sensitivity.csv   — Morris μ*, σ and Sobol S1, ST per input
-  plots/S8_PCMUSensitivity.png          — 3-panel: heatmap + two contour plots (S8 Fig)
+  <out_dir>/pcmu_phase4_sensitivity.csv   — Morris μ*, σ and Sobol S1, ST per input
+  <out_dir>/pcmu_weight_sensitivity.csv   — Spearman ρ under w1 perturbations
+  <fig_dir>/S8_PCMUSensitivity.png        — 3-panel: heatmap + two contour plots (S8 Fig)
+
+Usage:
+    python experiments/evaluate_phase4.py
+    python experiments/evaluate_phase4.py --results_dir results_revision \
+        --out_dir smoke_tests/revision1 --fig_dir smoke_tests/revision1
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -34,18 +46,19 @@ from SALib.sample import sobol as sobol_sample
 from scipy.interpolate import RegularGridInterpolator
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiments.evaluate_phase2 import (
-    load_centralized_aurocs,
+from experiments.compute_pcmu import (
+    PCMUConfig,
+    additive_pcmu,
+    evaluate_sweep,
+    factorial_components,
     load_st_aurocs,
-    compute_components,
-    compute_centralized_components,
-    add_additive_pcmu,
 )
 
-PCMU_W_DEFAULT = {"delta_m": 0.70, "eta_priv": 0.20, "eta_comm": 0.10}
+COMPONENTS     = ("delta_m", "eta_priv", "eta_comm")
 EPS_LEVELS     = [0.5, 1.0, 5.0]          # finite ε available in factorial
 EMBED_DIMS     = [32, 64, 128]
-TASK_CONFIG    = "all_tasks"
+ST_ARMS        = ["ST-IHM", "ST-Decomp", "ST-Pheno"]
+SA_SEED        = 0                        # Morris / Sobol sampling and bootstrap
 
 
 # ---------------------------------------------------------------------------
@@ -53,55 +66,31 @@ TASK_CONFIG    = "all_tasks"
 # ---------------------------------------------------------------------------
 
 def build_surrogate(
-    factorial_path: str = "results/pcmu_phase2_factorial.csv",
-    centralized_path: str = "results/centralized.csv",
-    exp1_path: str = "results/exp1.csv",
+    factorial_rounds_path: str,
+    st_aurocs: dict[str, float],
 ) -> tuple[RegularGridInterpolator, RegularGridInterpolator, RegularGridInterpolator,
-           dict, float]:
+           dict[str, float]]:
     """
-    Returns three interpolators for Δm, η_priv, η_comm over (log_eps_idx, embed_idx),
-    z-score params dict, and cen_pcmu_raw (the unshifted centralized anchor score).
+    Returns three interpolators for the z-scored Δm, η_priv, η_comm over
+    (log_eps_idx, embed_idx), and the anchor's mean z per component (ε=∞, embed_dim 64).
 
     Grid axes:
       log_eps_idx ∈ {0,1,2}  →  ε ∈ {0.5, 1.0, 5.0}
       embed_idx   ∈ {0,1,2}  →  embed_dim ∈ {32, 64, 128}
     """
-    df = pd.read_csv(factorial_path)
-    df["embed_dim"]     = df["embed_dim"].astype(int)
-    df["epsilon_level"] = df["epsilon_level"].astype(float)
-    df["seed"]          = df["seed"].astype(int)
+    cfg = PCMUConfig()
+    raw = factorial_components(pd.read_csv(factorial_rounds_path), st_aurocs, cfg)
+    anchor = np.isinf(raw["epsilon_level"]) & (raw["embed_dim"] == cfg.embed_dim)
+    df = additive_pcmu(raw, cfg.pcmu_weights, anchor)
+    anchor_z = {c: float(df.loc[anchor, f"{c}_z"].mean()) for c in COMPONENTS}
 
-    cen_df  = pd.read_csv(centralized_path)
-    exp1_df = pd.read_csv(exp1_path)
-    ca  = load_centralized_aurocs(cen_df)
-    st  = load_st_aurocs(exp1_df)
-    df, _ = compute_components(df, ca, st)
-    eta_max = float(df["eta_comm"].dropna().max())
-    cen     = compute_centralized_components(ca, st, eta_max)
-    df      = add_additive_pcmu(df, cen)
-
-    # z-score params fixed from full factorial
-    z_params: dict[str, tuple[float, float]] = {}
-    for col in ("delta_m", "eta_priv", "eta_comm"):
-        vals = df[col].dropna()
-        z_params[col] = (float(vals.mean()), float(vals.std(ddof=1)))
-
-    # centralized anchor (unshifted)
-    mu_dm,  s_dm  = z_params["delta_m"]
-    mu_ep,  s_ep  = z_params["eta_priv"]
-    mu_ec,  s_ec  = z_params["eta_comm"]
-    cen_raw = (
-        PCMU_W_DEFAULT["delta_m"]  * (cen["delta_m"]  - mu_dm) / s_dm +
-        PCMU_W_DEFAULT["eta_priv"] * (cen["eta_priv"] - mu_ep) / s_ep +
-        PCMU_W_DEFAULT["eta_comm"] * (cen["eta_comm"] - mu_ec) / s_ec
-    )
-
-    # Mean components per (epsilon_level, embed_dim) for all_tasks
-    sub = df[(df["task_config"] == TASK_CONFIG) & (df["epsilon_level"].isin(EPS_LEVELS))]
+    # Mean z-components per (epsilon_level, embed_dim)
     grid_means = (
-        sub.groupby(["epsilon_level", "embed_dim"])[["delta_m", "eta_priv", "eta_comm"]]
+        df[df["epsilon_level"].isin(EPS_LEVELS)]
+        .groupby(["epsilon_level", "embed_dim"])[[f"{c}_z" for c in COMPONENTS]]
         .mean()
         .reset_index()
+        .rename(columns={f"{c}_z": c for c in COMPONENTS})
     )
 
     # Build 2-D grids: axis0 = eps_idx (0,1,2), axis1 = embed_idx (0,1,2)
@@ -127,7 +116,7 @@ def build_surrogate(
     interp_ep = RegularGridInterpolator(axes, ep_grid,  method="linear", bounds_error=False, fill_value=None)
     interp_ec = RegularGridInterpolator(axes, ec_grid,  method="linear", bounds_error=False, fill_value=None)
 
-    return interp_dm, interp_ep, interp_ec, z_params, cen_raw
+    return interp_dm, interp_ep, interp_ec, anchor_z
 
 
 # ---------------------------------------------------------------------------
@@ -146,11 +135,8 @@ def _embed_to_idx(embed: float) -> float:
     return 2.0 * (np.log(np.clip(embed, 32, 128)) - log_bounds[0]) / (log_bounds[1] - log_bounds[0])
 
 
-def make_pcmu_fn(interp_dm, interp_ep, interp_ec, z_params, cen_raw):
-    """Returns a function pcmu(X) where X has columns [eps, w1, embed_dim]."""
-    mu_dm, s_dm = z_params["delta_m"]
-    mu_ep, s_ep = z_params["eta_priv"]
-    mu_ec, s_ec = z_params["eta_comm"]
+def make_pcmu_fn(interp_dm, interp_ep, interp_ec, anchor_z):
+    """Returns a function pcmu(X) where X has columns [eps, w1, embed_dim]; anchor = 1.0 at every w1."""
 
     def pcmu_fn(X: np.ndarray) -> np.ndarray:
         eps   = X[:, 0]
@@ -161,18 +147,12 @@ def make_pcmu_fn(interp_dm, interp_ep, interp_ec, z_params, cen_raw):
         embed_idx = _embed_to_idx(embed)
         pts = np.column_stack([eps_idx, embed_idx])
 
-        dm = interp_dm(pts)
-        ep = interp_ep(pts)
-        ec = interp_ec(pts)
-
-        dm_z = (dm - mu_dm) / s_dm
-        ep_z = (ep - mu_ep) / s_ep
-        ec_z = (ec - mu_ec) / s_ec
-
         w2 = (1.0 - w1) * (2.0 / 3.0)
         w3 = (1.0 - w1) * (1.0 / 3.0)
 
-        return w1 * dm_z + w2 * ep_z + w3 * ec_z - cen_raw + 1.0
+        return (w1 * (interp_dm(pts) - anchor_z["delta_m"])
+                + w2 * (interp_ep(pts) - anchor_z["eta_priv"])
+                + w3 * (interp_ec(pts) - anchor_z["eta_comm"]) + 1.0)
 
     return pcmu_fn
 
@@ -187,9 +167,9 @@ def run_morris(pcmu_fn) -> pd.DataFrame:
         "names":    ["epsilon", "w1", "embed_dim"],
         "bounds":   [[0.5, 5.0], [0.40, 0.90], [32.0, 128.0]],
     }
-    X  = morris_sample.sample(problem, N=500, num_levels=8)
+    X  = morris_sample.sample(problem, N=500, num_levels=8, seed=SA_SEED)
     Y  = pcmu_fn(X)
-    Si = morris_analyze.analyze(problem, X, Y, num_resamples=100, print_to_console=False)
+    Si = morris_analyze.analyze(problem, X, Y, num_resamples=100, print_to_console=False, seed=SA_SEED)
     return pd.DataFrame({
         "input":  problem["names"],
         "mu_star": Si["mu_star"],
@@ -207,9 +187,9 @@ def run_sobol(pcmu_fn) -> pd.DataFrame:
         "names":    ["epsilon", "w1", "embed_dim"],
         "bounds":   [[0.5, 5.0], [0.40, 0.90], [32.0, 128.0]],
     }
-    X  = sobol_sample.sample(problem, N=2048)
+    X  = sobol_sample.sample(problem, N=2048, seed=SA_SEED)
     Y  = pcmu_fn(X)
-    Si = sobol_analyze.analyze(problem, Y, print_to_console=False)
+    Si = sobol_analyze.analyze(problem, Y, print_to_console=False, seed=SA_SEED)
     return pd.DataFrame({
         "input": problem["names"],
         "S1":    Si["S1"],
@@ -347,61 +327,33 @@ def plot_sensitivity(morris_df: pd.DataFrame, sobol_df: pd.DataFrame, pcmu_fn, o
 # ---------------------------------------------------------------------------
 
 def compute_weight_sensitivity_table(
-    paper_results_path: str = "results/pcmu_paper_results.csv",
-    out_csv: str = "results/pcmu_weight_sensitivity.csv",
+    sweep_pcmu: pd.DataFrame,
+    out_csv: str,
 ) -> pd.DataFrame:
     """
-    Compute Spearman ρ of PCMU rankings under ±0.10 w1 perturbations vs. default w1=0.70.
+    Spearman ρ of the ε-level PCMU ranking under w1 perturbations vs. default w1=0.70.
 
     For each w1 ∈ {0.50, 0.60, 0.70, 0.80}:
       - w2 = (1 - w1) * 2/3,  w3 = (1 - w1) * 1/3   (maintains w2:w3 = 2:1 ratio)
-      - PCMU recomputed as z-scored weighted sum of raw components
-      - Spearman ρ computed against default w1=0.70 rankings
-
-    Rows with missing component data are excluded from the ranking comparison.
+      - PCMU recomputed by compute_pcmu.additive_pcmu() on the evaluate_sweep() components
+      - Spearman ρ of the mean-across-seeds PCMU per ε against default w1=0.70
     """
     from scipy.stats import spearmanr
 
-    df = pd.read_csv(paper_results_path)
-
-    # Keep only rows with all three components available
-    component_cols = ["delta_m_mean", "eta_priv_mean", "eta_comm_mean"]
-    df_valid = df.dropna(subset=component_cols).copy()
-
-    if df_valid.empty:
-        raise ValueError(
-            f"No rows with complete component data in {paper_results_path}. "
-            "Check delta_m_mean / eta_priv_mean / eta_comm_mean columns."
-        )
-
-    # Z-score parameters estimated from the valid rows (same pool for all w1 sweeps)
-    means: dict[str, float] = {}
-    stds: dict[str, float] = {}
-    for col in component_cols:
-        vals = df_valid[col].astype(float)
-        means[col] = float(vals.mean())
-        stds[col] = float(vals.std(ddof=1))
-
-    def _recompute_pcmu(w1: float) -> pd.Series:
-        w2 = (1.0 - w1) * (2.0 / 3.0)
-        w3 = (1.0 - w1) * (1.0 / 3.0)
-        dm_z = (df_valid["delta_m_mean"].astype(float) - means["delta_m_mean"]) / stds["delta_m_mean"]
-        ep_z = (df_valid["eta_priv_mean"].astype(float) - means["eta_priv_mean"]) / stds["eta_priv_mean"]
-        ec_z = (df_valid["eta_comm_mean"].astype(float) - means["eta_comm_mean"]) / stds["eta_comm_mean"]
-        return w1 * dm_z + w2 * ep_z + w3 * ec_z
+    def _eps_means(w1: float) -> pd.Series:
+        w = {"delta_m": w1, "eta_priv": (1.0 - w1) * (2.0 / 3.0), "eta_comm": (1.0 - w1) * (1.0 / 3.0)}
+        return additive_pcmu(sweep_pcmu, w).groupby("epsilon_level")["pcmu"].mean()
 
     W1_SWEEP = [0.50, 0.60, 0.70, 0.80]
     DEFAULT_W1 = 0.70
 
-    scores_default = _recompute_pcmu(DEFAULT_W1)
-    rank_default = scores_default.rank(ascending=False)
+    scores_default = _eps_means(DEFAULT_W1)
 
     records = []
     for w1 in W1_SWEEP:
         w2 = (1.0 - w1) * (2.0 / 3.0)
         w3 = (1.0 - w1) * (1.0 / 3.0)
-        scores = _recompute_pcmu(w1)
-        rho, pval = spearmanr(rank_default, scores.rank(ascending=False))
+        rho, pval = spearmanr(scores_default, _eps_means(w1).loc[scores_default.index])
         records.append({
             "w1": round(w1, 2),
             "w2": round(w2, 4),
@@ -433,9 +385,24 @@ def compute_weight_sensitivity_table(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    p = argparse.ArgumentParser(description="PCMU Phase 4 sensitivity surface")
+    p.add_argument("--results_dir", default="results_revision")
+    p.add_argument("--sweep_file", default="prism_privacy_sweep.csv")
+    p.add_argument("--out_dir", default="results_revision")
+    p.add_argument("--fig_dir", default="Manuscript/figures_revision")
+    args = p.parse_args()
+    res, out_dir, fig_dir = Path(args.results_dir), Path(args.out_dir), Path(args.fig_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fig_dir.mkdir(parents=True, exist_ok=True)
+
+    sweep = pd.read_csv(res / args.sweep_file)
+    exp1_df = sweep[sweep["arm"].isin(ST_ARMS)].rename(columns={"arm": "model"})
+    factorial_rounds_path = res / "pcmu_phase2_factorial_rounds.csv"
+
     print("Building PCMU surrogate from factorial data...")
-    interp_dm, interp_ep, interp_ec, z_params, cen_raw = build_surrogate()
-    pcmu_fn = make_pcmu_fn(interp_dm, interp_ep, interp_ec, z_params, cen_raw)
+    interp_dm, interp_ep, interp_ec, anchor_z = build_surrogate(
+        str(factorial_rounds_path), load_st_aurocs(exp1_df))
+    pcmu_fn = make_pcmu_fn(interp_dm, interp_ep, interp_ec, anchor_z)
 
     print("\n[Morris screening]")
     morris_df = run_morris(pcmu_fn)
@@ -446,17 +413,18 @@ def main() -> None:
     print(sobol_df.to_string(index=False))
 
     # Save sensitivity results
-    out_csv = "results/pcmu_phase4_sensitivity.csv"
+    out_csv = out_dir / "pcmu_phase4_sensitivity.csv"
     merged = morris_df.merge(sobol_df, on="input")
     merged.to_csv(out_csv, index=False)
     print(f"\nSaved → {out_csv}")
 
     # Figures
-    import os; os.makedirs("Manuscript/figures", exist_ok=True)
-    plot_sensitivity(morris_df, sobol_df, pcmu_fn, "Manuscript/figures/S8_PCMUSensitivity.png")
+    plot_sensitivity(morris_df, sobol_df, pcmu_fn, str(fig_dir / "S8_PCMUSensitivity.png"))
 
-    # Weight sensitivity table (standalone — uses pcmu_paper_results.csv directly)
-    compute_weight_sensitivity_table()
+    # Weight sensitivity table on the sweep PCMU (manuscript Fig 7)
+    privacy_df = sweep[(sweep["arm"] == "PRISM") & (sweep["weighting"] == "equal")].assign(mode="uniform")
+    sweep_pcmu = evaluate_sweep(privacy_df, exp1_df, pd.read_csv(factorial_rounds_path))
+    compute_weight_sensitivity_table(sweep_pcmu, str(out_dir / "pcmu_weight_sensitivity.csv"))
 
 
 if __name__ == "__main__":

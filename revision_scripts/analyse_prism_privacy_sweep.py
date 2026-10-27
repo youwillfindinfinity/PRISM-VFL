@@ -10,7 +10,8 @@ Computes, per split (val/test) and task (ihm/decomp/pheno):
   - reproducible/directional verdict (CI excludes 0 AND sign p<0.05 AND >=8/10 seeds agree)
   - negative transfer rate (fraction of seeds where PRISM < ST)
   - DP utility loss: paired PRISM(equal, eps) - PRISM(equal, inf), per seed
-  - PCMU via compute_pcmu.evaluate_sweep() on validation curves (compute_pcmu.py itself untouched)
+  - DP total-rounds difference: same pairing, reported apart from PCMU
+  - PCMU via compute_pcmu.evaluate_sweep() on validation curves, R_ST from the PCMU factorial
 
 Usage:
     python revision_scripts/analyse_prism_privacy_sweep.py
@@ -28,10 +29,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.stats import wilcoxon, binomtest
+from scipy.stats import wilcoxon, binomtest, spearmanr
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from experiments.compute_pcmu import evaluate_sweep
+from experiments.compute_pcmu import PCMUConfig, evaluate_sweep
 
 TASK_METRICS = {"ihm": "ihm_auroc", "decomp": "decomp_auroc", "pheno": "pheno_macro_auroc"}
 ST_NAME = {"ihm": "ST-IHM", "decomp": "ST-Decomp", "pheno": "ST-Pheno"}
@@ -126,23 +127,54 @@ def dp_utility_loss_rows(df: pd.DataFrame, split: str) -> list[dict]:
     return rows
 
 
-def pcmu_rows(df: pd.DataFrame) -> list[dict]:
-    """PCMU via compute_pcmu.evaluate_sweep(); adapts our schema (arm/weighting) into
-    the (model/mode) schema that function expects, without touching compute_pcmu.py."""
+def rounds_vs_nodp_rows(df: pd.DataFrame) -> list[dict]:
+    """PRISM(equal, eps) - PRISM(equal, eps=inf) training rounds, per seed (descriptive; not part of PCMU).
+    Read with dp_utility_loss: fewer rounds under DP come with lower AUROC, not better efficiency."""
+    rows = []
+    runs = df[(df.arm == "PRISM") & (df.weighting == "equal")].groupby(["epsilon_level", "seed"])[
+        "stopping_round"].first().reset_index()
+    nodp = runs[runs.epsilon_level == float("inf")]
+    for eps in DP_EPS_LEVELS:
+        merged = runs[runs.epsilon_level == eps].merge(nodp, on="seed", suffixes=("_dp", "_nodp"))
+        if merged.empty:
+            continue
+        deltas = (merged["stopping_round_dp"] - merged["stopping_round_nodp"]).to_numpy(dtype=float)
+        lo, hi = bootstrap_ci(deltas)
+        rows.append(dict(
+            metric="rounds_vs_nodp", split="val", task="all", arm="PRISM", weighting="equal", epsilon_level=eps,
+            mean=float(np.mean(deltas)), sd=float(np.std(deltas, ddof=1)) if len(deltas) > 1 else float("nan"),
+            ci_lo=lo, ci_hi=hi, n_seeds=len(deltas),
+            r_dp=float(merged["stopping_round_dp"].mean()), r_nodp=float(merged["stopping_round_nodp"].mean()),
+        ))
+    return rows
+
+
+def pcmu_rows(df: pd.DataFrame, factorial_rounds: pd.DataFrame) -> list[dict]:
+    """PCMU via compute_pcmu.evaluate_sweep(), primary (total rounds) and sensitivity (best round);
+    adapts our schema (arm/weighting) into the (model/mode) schema that function expects."""
     privacy_df = df[(df.arm == "PRISM") & (df.weighting == "equal")].copy()
     if privacy_df.empty:
         return []
     privacy_df["mode"] = "uniform"
     exp1_df = df[df.arm.isin(ST_NAME.values())].rename(columns={"arm": "model"})
-    pcmu_df = evaluate_sweep(privacy_df, exp1_df, mode="uniform")
     rows = []
-    for eps, g in pcmu_df.groupby("epsilon_level"):
-        rows.append(dict(
-            metric="pcmu", split="val", task="all", arm="PRISM", weighting="equal", epsilon_level=eps,
-            mean=float(g["pcmu"].mean()),
-            sd=float(g["pcmu"].std(ddof=1)) if len(g) > 1 else float("nan"),
-            n_seeds=len(g),
-        ))
+    means = {}
+    for round_def, metric in (("total", "pcmu"), ("best", "pcmu_best_round")):
+        pcmu_df = evaluate_sweep(privacy_df, exp1_df, factorial_rounds, mode="uniform",
+                                 config=PCMUConfig(round_def=round_def))
+        means[metric] = pcmu_df.groupby("epsilon_level")["pcmu"].mean()
+        for eps, g in pcmu_df.groupby("epsilon_level"):
+            lo, hi = bootstrap_ci(g["pcmu"].to_numpy(dtype=float))
+            rows.append(dict(
+                metric=metric, split="val", task="all", arm="PRISM", weighting="equal", epsilon_level=eps,
+                mean=float(g["pcmu"].mean()),
+                sd=float(g["pcmu"].std(ddof=1)) if len(g) > 1 else float("nan"),
+                ci_lo=lo, ci_hi=hi, n_seeds=len(g),
+            ))
+    rho = float(spearmanr(means["pcmu"], means["pcmu_best_round"].loc[means["pcmu"].index]).statistic)
+    for r in rows:
+        if r["metric"] == "pcmu_best_round":
+            r["spearman_vs_primary"] = rho
     return rows
 
 
@@ -165,6 +197,7 @@ def main() -> None:
     parser.add_argument("--test_input", default="results_revision/prism_privacy_sweep_test.csv")
     parser.add_argument("--output", default="results_revision/prism_privacy_sweep_stats.csv")
     parser.add_argument("--summary_md", default="results_revision/prism_privacy_sweep_summary.md")
+    parser.add_argument("--factorial_rounds", default="results_revision/pcmu_phase2_factorial_rounds.csv")
     args = parser.parse_args()
 
     rows = []
@@ -173,7 +206,7 @@ def main() -> None:
         assert df["epsilon_level"].dtype != object, f"epsilon_level did not parse as numeric in {path}"
         rows += summary_rows(df, split) + paired_rows(df, split) + dp_utility_loss_rows(df, split)
         if split == "val":
-            rows += pcmu_rows(df)
+            rows += rounds_vs_nodp_rows(df) + pcmu_rows(df, pd.read_csv(args.factorial_rounds))
     out = pd.DataFrame(rows)
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
